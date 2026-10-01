@@ -57,6 +57,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 
 参数和恢复行为见[测试文档](docs/testing.md)，硬件接口说明见 [WMI 接口文档](docs/reference/wmi/interfaces.md)。
 
+## 后续计划
+
+后续功能规划见[路线图](ROADMAP.md)。其中列出的项目都还没有实现。
+
 ## 项目结构
 
 ```text

@@ -57,6 +57,10 @@ The script requests administrator privileges, checks all three profiles against 
 
 See [docs/testing.md](docs/testing.md) for parameters and recovery behavior, and [docs/reference/wmi/interfaces.md](docs/reference/wmi/interfaces.md) for the hardware interface details.
 
+## Roadmap
+
+Planned features are tracked in [ROADMAP.md](ROADMAP.md). These items are plans and are not implemented yet.
+
 ## Project layout
 
 ```text
