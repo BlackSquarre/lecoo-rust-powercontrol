@@ -31,12 +31,12 @@ fn main() -> Result<(), eframe::Error> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1000.0, 600.0])
             .with_min_inner_size([800.0, 500.0])
-            .with_title("Lecoo Mini Pro 控制中心"),
+            .with_title("Lecoo Rust PowerControl"),
         ..Default::default()
     };
 
     eframe::run_native(
-        "Lecoo Control Center",
+        "Lecoo Rust PowerControl",
         options,
         Box::new(|cc| Ok(Box::new(ui::ControlCenterApp::new(cc, hw_control)))),
     )

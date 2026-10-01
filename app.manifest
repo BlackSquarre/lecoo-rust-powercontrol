@@ -6,7 +6,7 @@
     name="LecooControlCenter"
     type="win32"
   />
-  <description>Lecoo MINI PRO Control Center</description>
+  <description>Lecoo Rust PowerControl</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

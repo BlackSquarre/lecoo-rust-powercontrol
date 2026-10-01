@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to build and package
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -15,6 +20,8 @@ jobs:
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
@@ -26,7 +33,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '${{ github.ref_name }}'
+          $version = '${{ inputs.ref }}'
+          if ([string]::IsNullOrWhiteSpace($version)) { $version = '${{ github.ref_name }}' }
+          if ($version -match '^refs/tags/(v\d+\.\d+\.\d+)$') { $version = $Matches[1] }
           if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a semantic version tag, got $version" }
           $packageName = "lecoo-rust-powercontrol-$version-windows-x64"
           $stage = Join-Path $env:RUNNER_TEMP $packageName
@@ -42,13 +51,17 @@ jobs:
           "$zipHash  $([IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding ASCII
           "PACKAGE_ARCHIVE=$archive" >> $env:GITHUB_ENV
           "PACKAGE_CHECKSUM=$archive.sha256" >> $env:GITHUB_ENV
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${{ github.ref_name }}"
-          "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM"
-          --verify-tag
-          --title "${{ github.ref_name }}"
-          --generate-notes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release view "$env:PACKAGE_VERSION" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --clobber
+          } else {
+            gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --generate-notes
+          }
