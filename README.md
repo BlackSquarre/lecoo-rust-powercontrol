@@ -1,50 +1,71 @@
-# Lecoo MINI PRO Control Center
+# Lecoo Rust PowerControl
 
-An unofficial Windows control center for the Lecoo MINI PRO-AHP, written in Rust with egui.
+<p align="center">
+  <strong>A Rust-powered Windows control center for compatible Lecoo systems.</strong><br>
+  Switch power profiles and monitor hardware through a lightweight native desktop app built with Rust and egui.
+</p>
 
-**Author:** [BlackSquarre](https://github.com/BlackSquarre)  
-**Version:** 0.0.1  
-**Tested hardware:** Lecoo MINI PRO-AHP
+<p align="center">
+  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases"><img src="https://img.shields.io/github/v/release/BlackSquarre/lecoo-rust-powercontrol?display_name=tag" alt="Latest release"></a>
+  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml/badge.svg?branch=main" alt="Windows release build"></a>
+  <img src="https://img.shields.io/badge/Rust-2021-orange?logo=rust" alt="Rust 2021">
+  <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
+</p>
 
-This is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
+**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.1](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) · **Language:** [简体中文](README.zh-CN.md)
+
+Lecoo Rust PowerControl is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
 
 ## Features
 
-- Switch between Quiet, Balanced, and Performance modes using the local `root\WMI\PowerSwitchInterface` interface.
-- Read the hardware fan and temperature values, plus system memory and disk use.
-- Verify each power mode change by reading the mode back from the hardware.
+- Switch between **Quiet**, **Balanced**, and **Performance** power profiles.
+- Read the active profile back from the hardware after a change.
+- View fan speed and CPU temperature when the firmware exposes them, plus system memory and disk usage.
+- Run the GUI and hardware test utility against the same Rust hardware-control library.
 
-Manual fan control and the settings page are not implemented yet. Hardware access requires administrator privileges. Power mode switching has been verified on one Lecoo MINI PRO-AHP.
+Hardware access requires administrator privileges and a compatible Lecoo WMI provider. Manual fan-speed control and settings-page actions are not implemented yet. Hardware switching has been verified on one Lecoo system.
 
 ## Download
 
-Download `lecoo-mini-pro-ahp-control-center-v0.0.1-windows-x64.zip` from the [v0.0.1 release](https://github.com/BlackSquarre/lecoo-mini-pro-ahp-control-center/releases/tag/v0.0.1). The archive contains the control center, its hardware test utility, and SHA-256 checksums. Run the control center as administrator.
+Download the Windows x64 package from the [v0.0.1 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1):
 
-The release is built from this tag by [GitHub Actions](.github/workflows/release.yml).
+- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip` — application, hardware test utility, and executable checksums.
+- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip.sha256` — checksum for the ZIP archive.
+
+Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) for validation details and known limitations.
 
 ## Build from source
 
-You need the stable Rust MSVC toolchain and Visual Studio Build Tools with the Windows SDK.
+The application targets 64-bit Windows. Install the stable Rust MSVC toolchain and Visual Studio Build Tools with the Windows SDK, then run:
 
 ```powershell
 cargo fetch --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
 
-The build script compiles the app and its hardware test utility, copies both to `dist/`, and writes checksums. On a new checkout, the first build downloads locked Cargo dependencies before compiling.
+The script builds the app and hardware test utility, copies them to `dist/`, and creates SHA-256 checksums. GitHub Actions builds release binaries from version tags using the locked dependencies.
 
-## Hardware test
+## Automated hardware test
 
-On a supported Lecoo MINI PRO-AHP, run:
+On a compatible Windows system, run:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.ps1
 ```
 
-The script requests administrator privileges, checks all three modes against an independent Windows CIM read, and restores the original mode after the run, including its failure path. It writes detailed JSON results to `logs/power-mode-tests/`, which stays local and is excluded from the public repository.
+The script requests administrator privileges, checks all three profiles against an independent Windows CIM read, rejects an invalid mode value, and restores the original profile after success or failure. Use `-ReadOnly` to inspect hardware without changing its power profile. Detailed JSON reports are written to `logs/power-mode-tests/`, which is excluded from the public repository.
 
-For test options and safety details, see [docs/testing.md](docs/testing.md). WMI parameter definitions are in [docs/reference/wmi/interfaces.md](docs/reference/wmi/interfaces.md).
+See [docs/testing.md](docs/testing.md) for parameters and recovery behavior, and [docs/reference/wmi/interfaces.md](docs/reference/wmi/interfaces.md) for the hardware interface details.
+
+## Project layout
+
+```text
+src/       Rust application, UI, hardware abstraction, and test utility
+scripts/   Windows build and automated hardware-test scripts
+docs/      Setup, testing, and hardware-interface documentation
+.github/   Windows release workflow
+```
 
 ## License
 
-No open-source license is granted in this release. Copyright remains with BlackSquarre; access to this public repository does not grant permission to redistribute or reuse its code.
+No open-source license is granted. Copyright remains with BlackSquarre; public access to this repository does not grant permission to redistribute or reuse the code.

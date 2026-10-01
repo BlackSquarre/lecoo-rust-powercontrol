@@ -4,7 +4,7 @@ version = "0.0.1"
 edition = "2021"
 default-run = "lecoo-control-center"
 authors = ["BlackSquarre"]
-description = "Unofficial Windows control center for Lecoo MINI PRO-AHP"
+description = "Rust-powered unofficial Windows power control center for compatible Lecoo systems"
 
 [dependencies]
 # GUI

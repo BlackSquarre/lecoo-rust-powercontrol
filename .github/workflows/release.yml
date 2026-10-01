@@ -28,7 +28,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $version = '${{ github.ref_name }}'
           if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a semantic version tag, got $version" }
-          $packageName = "lecoo-mini-pro-ahp-control-center-$version-windows-x64"
+          $packageName = "lecoo-rust-powercontrol-$version-windows-x64"
           $stage = Join-Path $env:RUNNER_TEMP $packageName
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           Copy-Item target/release/lecoo-control-center.exe, target/release/hardware_test.exe -Destination $stage
