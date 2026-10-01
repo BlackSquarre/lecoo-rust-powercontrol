@@ -1,0 +1,9 @@
+
+CimClassName        : PowerSwitchInterface
+CimSuperClassName   : PowerSwitchMode
+CimSuperClass       : ROOT/WMI:PowerSwitchMode
+CimClassProperties  : {Active, InstanceName}
+CimClassQualifiers  : {Description, dynamic, guid, provider…}
+CimClassMethods     : {SetPowerMode, GetPowerMode, SetFanControl, GetFanControl…}
+CimSystemProperties : Microsoft.Management.Infrastructure.CimSystemProperties
+

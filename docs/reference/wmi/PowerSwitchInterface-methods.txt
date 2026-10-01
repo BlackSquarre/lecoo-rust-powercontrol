@@ -1,0 +1,256 @@
+
+Name       : SetPowerMode
+ReturnType : Boolean
+Parameters : {PowerMode, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : PowerMode
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetPowerMode
+ReturnType : Boolean
+Parameters : {CurrentPowerMode}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : CurrentPowerMode
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : SetFanControl
+ReturnType : Boolean
+Parameters : {FanDuty, FanNumber, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : FanDuty
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : FanNumber
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetFanControl
+ReturnType : Boolean
+Parameters : {FanNumber, FanDuty}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : FanNumber
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : FanDuty
+CimType            : UInt32
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : SetKbdBltBrightness
+ReturnType : Boolean
+Parameters : {BrightnessMode, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : BrightnessMode
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetKbdBltBrightness
+ReturnType : Boolean
+Parameters : {BrightnessMode, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : BrightnessMode
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : SetKbdLightMode
+ReturnType : Boolean
+Parameters : {KbdLightMode, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : KbdLightMode
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetKbdLightMode
+ReturnType : Boolean
+Parameters : {KbdLightMode, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : KbdLightMode
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : SetKbdFnCtrl
+ReturnType : Boolean
+Parameters : {DeviceStatus, KbdFnCtrl, ResultStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : DeviceStatus
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : KbdFnCtrl
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetKbdFnCtrl
+ReturnType : Boolean
+Parameters : {KbdFnCtrl, DeviceStatus}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : KbdFnCtrl
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : DeviceStatus
+CimType            : UInt16
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetHwTemp
+ReturnType : Boolean
+Parameters : {HwTempType, Temp}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : HwTempType
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Temp
+CimType            : UInt32
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : SetFeatureValue
+ReturnType : Boolean
+Parameters : {Reserved1, Reserved2, Reserved3, Reserved4…}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : Reserved1
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved2
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved3
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved4
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt8
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+
+
+Name       : GetFeatureValue
+ReturnType : Boolean
+Parameters : {Reserved1, Reserved2, Reserved3, Reserved4…}
+Qualifiers : {Description, Implemented, read, WmiMethodId…}
+
+
+Name               : Reserved1
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved2
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved3
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : Reserved4
+CimType            : UInt8
+Qualifiers         : {ID, in}
+ReferenceClassName : 
+
+Name               : ResultStatus
+CimType            : UInt32
+Qualifiers         : {ID, out}
+ReferenceClassName : 
+

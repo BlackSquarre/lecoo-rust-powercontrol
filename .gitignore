@@ -1,0 +1,7 @@
+/target/
+/dist/
+/logs/
+*.pdb
+/docs/history/
+/docs/reference/original-source/lecoo-mini-pro-control-center.py
+/docs/reference/wmi/PowerSwitchInterface.clixml

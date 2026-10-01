@@ -1,0 +1,54 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binaries
+        run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test
+
+      - name: Package and checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ github.ref_name }}'
+          if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a semantic version tag, got $version" }
+          $packageName = "lecoo-mini-pro-ahp-control-center-$version-windows-x64"
+          $stage = Join-Path $env:RUNNER_TEMP $packageName
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item target/release/lecoo-control-center.exe, target/release/hardware_test.exe -Destination $stage
+          $checksums = Get-ChildItem -LiteralPath $stage -File | ForEach-Object {
+            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          }
+          $checksums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Encoding ASCII
+          $archive = Join-Path $env:RUNNER_TEMP "$packageName.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
+          $zipHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$zipHash  $([IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding ASCII
+          "PACKAGE_ARCHIVE=$archive" >> $env:GITHUB_ENV
+          "PACKAGE_CHECKSUM=$archive.sha256" >> $env:GITHUB_ENV
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM"
+          --verify-tag
+          --title "${{ github.ref_name }}"
+          --generate-notes
