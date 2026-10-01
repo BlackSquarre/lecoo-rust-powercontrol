@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases"><img src="https://img.shields.io/github/v/release/BlackSquarre/lecoo-rust-powercontrol?display_name=tag" alt="最新版本"></a>
-  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml/badge.svg?branch=main" alt="Windows 发布构建"></a>
+  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml/badge.svg" alt="Windows 发布构建"></a>
   <img src="https://img.shields.io/badge/Rust-2021-orange?logo=rust" alt="Rust 2021">
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
