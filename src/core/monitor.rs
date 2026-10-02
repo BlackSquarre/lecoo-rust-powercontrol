@@ -10,6 +10,7 @@ pub struct SystemMonitor {
     disks: Disks,
     last_update: Instant,
     update_interval: Duration,
+    snapshot: SystemSnapshot,
 }
 
 impl SystemMonitor {
@@ -18,8 +19,9 @@ impl SystemMonitor {
             hw_control: Arc::new(Mutex::new(hw_control)),
             sys_info: System::new_all(),
             disks: Disks::new_with_refreshed_list(),
-            last_update: Instant::now(),
+            last_update: Instant::now() - Duration::from_secs(1),
             update_interval: Duration::from_secs(1),
+            snapshot: SystemSnapshot::default(),
         }
     }
 
@@ -28,7 +30,7 @@ impl SystemMonitor {
 
         // 只有超过更新间隔才真正刷新
         if now.duration_since(self.last_update) < self.update_interval {
-            return self.get_current_snapshot();
+            return self.snapshot.clone();
         }
 
         self.last_update = now;
@@ -37,7 +39,8 @@ impl SystemMonitor {
         self.sys_info.refresh_memory();
         self.disks.refresh(true);
 
-        self.get_current_snapshot()
+        self.snapshot = self.get_current_snapshot();
+        self.snapshot.clone()
     }
 
     fn get_current_snapshot(&self) -> SystemSnapshot {
@@ -53,7 +56,7 @@ impl SystemMonitor {
                 Err(error) => snapshot.power_mode_error = Some(format!("读取当前模式失败: {:#}", error)),
             }
             snapshot.fan_speed = hw.get_fan_speed(1).ok().flatten();
-            snapshot.cpu_temp = hw.get_hw_temp(1).ok().flatten();
+            snapshot.cpu_temp = hw.get_cpu_temperature().ok().flatten();
         }
 
         // 内存信息
@@ -81,5 +84,9 @@ impl SystemMonitor {
 
     pub fn get_hw_control(&self) -> Arc<Mutex<Box<dyn HardwareControl>>> {
         self.hw_control.clone()
+    }
+
+    pub fn invalidate(&mut self) {
+        self.last_update = Instant::now() - self.update_interval;
     }
 }

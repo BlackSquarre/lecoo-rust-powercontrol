@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.1](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) · **Language:** [简体中文](README.zh-CN.md)
+**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.2](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) · **Language:** [简体中文](README.zh-CN.md)
 
 Lecoo Rust PowerControl is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
 
@@ -20,19 +20,19 @@ Lecoo Rust PowerControl is an independent community project. It is not affiliate
 
 - Switch between **Quiet**, **Balanced**, and **Performance** power profiles.
 - Read the active profile back from the hardware after a change.
-- View fan speed and CPU temperature when the firmware exposes them, plus system memory and disk usage.
+- View measured fan RPM and native CPU Package temperature on the supported device, plus system memory and disk usage.
 - Run the GUI and hardware test utility against the same Rust hardware-control library.
 
-Hardware access requires administrator privileges and a compatible Lecoo WMI provider. Manual fan-speed control and settings-page actions are not implemented yet. Hardware switching has been verified on one Lecoo system.
+Hardware access requires administrator privileges and a compatible Lecoo WMI provider. The current source also includes opt-in elevated login startup, tray profile controls, one app instance per session, a close-to-tray preference, and guarded Auto/Maximum/35–100% fan requests. Native temperature and manual cooling currently require the verified 8745H single-fan path and an already loaded WinRing0 driver. The firmware cannot report actual duty or control mode; requested targets are distinguished from measured RPM. See the [feature guide](docs/features.md). Hardware switching has been verified on one Lecoo system.
 
 ## Download
 
-Download the Windows x64 package from the [v0.0.1 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1):
+Download the Windows x64 package from the [v0.0.2 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2):
 
-- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip` — application, hardware test utility, and executable checksums.
-- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip.sha256` — checksum for the ZIP archive.
+- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip` — application, hardware test utility, and executable checksums.
+- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip.sha256` — checksum for the ZIP archive.
 
-Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) for validation details and known limitations.
+Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) for validation details and known limitations.
 
 ## Build from source
 
@@ -59,7 +59,7 @@ See [docs/testing.md](docs/testing.md) for parameters and recovery behavior, and
 
 ## Roadmap
 
-Planned features are tracked in [ROADMAP.md](ROADMAP.md). These items are plans and are not implemented yet.
+Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integration, and guarded fan control are implemented in the current source; visual redesign and animation remain planned. These additions are included in the v0.0.2 package.
 
 ## Project layout
 

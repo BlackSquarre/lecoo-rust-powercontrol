@@ -1,10 +1,10 @@
 # Roadmap
 
-This document records planned work for **Lecoo Rust PowerControl**. Every item below is a plan only; none of these features is implemented yet.
+This document records planned work for **Lecoo Rust PowerControl**. Items 1–3 are implemented in the current working source; item 4 remains planned. Current functionality and verification limits are documented in [the feature guide](docs/features.md).
 
 ## Planned work
 
-### 1. Start with Windows
+### 1. Start with Windows — implemented
 
 - Add an opt-in setting to launch the app when the current user signs in.
 - Show whether automatic startup is enabled and let the user turn it off again.
@@ -13,7 +13,7 @@ This document records planned work for **Lecoo Rust PowerControl**. Every item b
 
 **Acceptance checks:** startup runs only after the user enables it; the app starts with hardware access available; disabling the option prevents the next sign-in launch; repeated toggles do not create duplicate entries.
 
-### 2. Notification-area icon and quick power controls
+### 2. Notification-area icon and quick power controls — implemented
 
 - Add a persistent icon in the Windows notification area (system tray), with a project-specific icon.
 - Add a right-click menu for Quiet, Balanced, and Performance profiles.
@@ -23,7 +23,9 @@ This document records planned work for **Lecoo Rust PowerControl**. Every item b
 
 **Acceptance checks:** the menu reflects the hardware's current profile; selecting a profile uses the same verified hardware-control path as the main UI; errors are visible; opening and exiting the app cleanly adds and removes the tray icon.
 
-### 3. Fan-speed adjustment
+### 3. Fan-speed adjustment — implemented with readback limits
+
+**Research update (2026-10-02):** The installed official binary confirms fan control uses WMI, while AMD temperature monitoring uses WinRing0. An independent Rust temperature probe has passed local sampling tests. A guarded WMI fan session is now implemented; exact duty/mode readback remains unavailable; see [driver and sensor research](docs/reference/wmi/native-sensor-research.md).
 
 - First confirm which fan-control methods and safe ranges the compatible hardware firmware actually exposes.
 - Add a fan control that reports the current measured RPM and exposes only supported adjustments, such as a safe manual target or supported fan mode.
@@ -32,6 +34,8 @@ This document records planned work for **Lecoo Rust PowerControl**. Every item b
 - If the firmware does not expose a safe writable control, report that clearly instead of presenting a nonfunctional control.
 
 **Acceptance checks:** only supported values can be submitted; applied settings are read back and verified; invalid values are rejected; failures restore or retain a safe automatic/default setting; tests verify both control behavior and recovery on compatible hardware.
+
+**Remaining acceptance limit:** the provider returns RPM but no target-duty or control-mode readback. Firmware responses and measured RPM are verified; this cannot fulfill exact setting readback. See [validation details](docs/testing.md).
 
 ### 4. Redesign the interface and add restrained motion
 
@@ -51,9 +55,9 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 ## 中文
 
-本文记录 **Lecoo Rust PowerControl** 的后续计划。以下功能目前都尚未实现；本文只记录计划，不代表已经开始开发。
+本文记录 **Lecoo Rust PowerControl** 的后续计划。当前源码已实现第 1–3 项；第 4 项 UI 重设计和动画仍保留为计划。具体用法与验证边界见[功能说明](docs/features.md)。
 
-### 1. Windows 登录后自动启动
+### 1. Windows 登录后自动启动 — 已实现
 
 - 增加可选设置，由用户决定是否在当前用户登录 Windows 时启动应用。
 - 显示自动启动状态，并允许用户随时关闭。
@@ -62,7 +66,7 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 **验收标准：** 只有用户启用后才会自动启动；启动后硬件访问仍然可用；关闭设置后下次登录不再启动；反复开关不会创建重复启动项。
 
-### 2. 任务栏通知区域图标与右键快捷切换
+### 2. 任务栏通知区域图标与右键快捷切换 — 已实现
 
 - 在 Windows 任务栏通知区域（系统托盘）增加专属图标。
 - 右键菜单提供安静、均衡、性能三种电源模式。
@@ -72,7 +76,9 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 **验收标准：** 菜单状态与硬件当前模式一致；快捷切换使用与主界面相同的硬件控制和读回验证流程；切换错误可见；打开或退出应用时托盘图标能正确创建和清理。
 
-### 3. 风扇转速调节
+### 3. 风扇转速调节 — 已实现，读回能力受限
+
+**调查进展（2026-10-02）：** 已从本机官方二进制确认风扇走 WMI、AMD 温度监控走 WinRing0，并完成独立 Rust 温度采样的本机验证。已接入带守护恢复的 WMI 风扇控制；固件仍不能读回实际目标占空比或控制模式，详见[驱动与传感器调查](docs/reference/wmi/native-sensor-research.md)。
 
 - 先确认兼容设备固件实际提供哪些风扇控制接口及安全范围。
 - 显示当前实测转速，并只开放硬件支持的调节方式，例如安全的手动目标值或固件支持的风扇模式。
@@ -81,6 +87,8 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 - 如果固件没有安全且可写的控制接口，应明确说明暂不支持，不显示无效控件。
 
 **验收标准：** 只能提交硬件支持的值；应用会读回并验证设置；非法值会被拒绝；发生故障时恢复或保持安全的自动/默认状态；在兼容硬件上验证正常调节和恢复流程。
+
+**尚未满足的验收限制：** 当前固件仅返回 RPM，没有目标占空比/控制模式读回接口。现已验证固件响应和实测转速，不能宣称精确设置读回验收完成，见[验证说明](docs/testing.md)。
 
 ### 4. 重新设计 UI 并加入克制的动画
 

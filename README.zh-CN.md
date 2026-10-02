@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.0.1](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) · **Language:** [English](README.md)
+**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.0.2](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) · **Language:** [English](README.md)
 
 Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属、合作或背书关系。
 
@@ -20,19 +20,19 @@ Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属�
 
 - 切换**安静、均衡、性能**三种电源模式。
 - 切换后重新读取硬件状态，确认模式是否生效。
-- 查看风扇转速和固件支持时的 CPU 温度，以及系统内存、磁盘使用情况。
+- 查看实测风扇 RPM 和受支持设备的原生 CPU Package 温度，以及系统内存、磁盘使用情况。
 - 图形界面和硬件测试工具共用同一套 Rust 硬件控制代码。
 
-访问硬件需要管理员权限和兼容的来酷 WMI 接口。手动风扇调速和设置页操作尚未实现。电源模式切换已在一台来酷设备上完成硬件验证。
+访问硬件需要管理员权限和兼容的来酷 WMI 接口。当前源码还提供可选登录启动、托盘快捷模式与单实例、关闭到托盘设置，以及带独立守护恢复的自动/最大/35–100% 风扇目标控制。温度与手动风扇目前限定本机已验证的 8745H 单风扇路径，并依赖已加载的 WinRing0。固件不能读回实际占空比/控制模式，界面区分请求目标和实测 RPM；见[功能说明](docs/features.md)。电源模式切换已在一台来酷设备上完成硬件验证。
 
 ## 下载
 
-在 [v0.0.1 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1) 下载 Windows x64 版本：
+在 [v0.0.2 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) 下载 Windows x64 版本：
 
-- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
-- `lecoo-rust-powercontrol-v0.0.1-windows-x64.zip.sha256`：压缩包校验值。
+- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
+- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip.sha256`：压缩包校验值。
 
-以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.1)。
+以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2)。
 
 ## 从源码构建
 
@@ -59,7 +59,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 
 ## 后续计划
 
-后续功能规划见[路线图](ROADMAP.md)。其中列出的项目都还没有实现。
+后续功能规划见[路线图](ROADMAP.md)。登录启动、托盘与风扇控制已在当前源码实现；UI 重设计和动画仍待实现。这些功能包含在 v0.0.2 发布包中。
 
 ## 项目结构
 

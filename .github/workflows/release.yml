@@ -63,5 +63,10 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release upload "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --clobber
           } else {
-            gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --generate-notes
+            $notes = "docs/releases/$env:PACKAGE_VERSION.md"
+            if (Test-Path -LiteralPath $notes) {
+              gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --notes-file "$notes"
+            } else {
+              gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --generate-notes
+            }
           }

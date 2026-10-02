@@ -11,8 +11,8 @@
 |---|---|---|
 | GetPowerMode | 无 → CurrentPowerMode UInt8 | 实测 1；源码 0=均衡、1=性能、2=安静 |
 | SetPowerMode | PowerMode UInt8 → ResultStatus UInt8 | 0/1/2 切换已在本机验证两轮 |
-| GetFanControl | FanNumber UInt8 → FanDuty UInt32 | 1 号实测 1634；2 号 2147483647；单位未确认 |
-| SetFanControl | FanNumber、FanDuty UInt8 → ResultStatus UInt8 | 源码有自动/自定义/最大风量；滑杆 35–100%，编码应核对源码；未写入测试 |
+| GetFanControl | FanNumber UInt8 → FanDuty UInt32 | FanNumber=1 的低 16 位为风扇 1 RPM，高 16 位为风扇 2 RPM；2 号返回哨兵 |
+| SetFanControl | FanNumber、FanDuty UInt8 → ResultStatus UInt8 | 已确认 101=自动、100=最大、35–100=手动目标；只返回 ResultStatus，没有目标模式/占空比读回 |
 | GetFeatureValue | Reserved1..4 UInt8 → ResultStatus UInt32 | 编号与读数见下表，实测时 Reserved2..4=0 |
 | SetFeatureValue | Reserved1..4 UInt8 → ResultStatus UInt8 | 源码开关使用编号 1/5/7 及 0/1；未写入测试 |
 | GetHwTemp | HwTempType UInt8 → Temp UInt32 | 类型 0=2147483647，类型 1=49；位置与单位未确认 |
@@ -42,7 +42,7 @@
 `DllCallMethod.dll` 导出：EyeModeNormal、GETNightMode、GETProtectEyeMode、NightModeNormal、NormalMode、SayHello。
 源码将部分函数用于护眼/夜间模式；函数签名和写入效果未在本机调用验证。
 ImagesShowService 使用 LocalSystem 自动运行；内部 IPC 未解析。
-WinRing0_1_2_0 是现有硬件监控驱动；没有导出或验证它的 IOCTL 协议，本资料不提供调用实现。
+WinRing0_1_2_0 是现有硬件监控驱动。本机二进制调查已确认官方 AMD 温度经 OpenHardwareMonitor 访问它，风扇设置则走 WMI。现已实现并在 Ryzen 7 8745H 上验证独立 Rust 温度采样原型，详见[驱动调查及采样验证](native-sensor-research.md)。原生采样复用已加载的驱动，未实现新内核驱动；现已接入带独立守护进程的 WMI 风扇控制，边界见[功能说明](../../features.md)。
 
 ## 建议的实现顺序
 

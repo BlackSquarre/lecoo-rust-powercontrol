@@ -17,6 +17,7 @@ const INSTANCE_NAME: &str = "ACPI\\PNP0C14\\IP3POWERSWITCH_0";
 pub struct WindowsHardwareControl {
     wmi_service: IWbemServices,
     instance_path: BSTR,
+    sensors: Option<super::sensors::ExistingWinRing0>,
 }
 
 // COM 对象只在初始化它的 GUI 线程上使用。
@@ -62,6 +63,7 @@ impl WindowsHardwareControl {
             Ok(Self {
                 wmi_service,
                 instance_path,
+                sensors: super::sensors::ExistingWinRing0::open().ok(),
             })
         }
     }
@@ -209,9 +211,14 @@ impl HardwareControl for WindowsHardwareControl {
             self.set_u8_param(&in_params, "FanNumber", fan_num)?;
 
             let result = self.invoke_method("GetFanControl", Some(&in_params))?;
-            let rpm = self.get_u32_from_result(&result, "FanDuty")?;
+            let packed = self.get_u32_from_result(&result, "FanDuty")?;
 
-            Ok(if is_valid_fan_reading(rpm) { Some(rpm) } else { None })
+            if !is_valid_fan_reading(packed) || packed == u32::MAX { return Ok(None); }
+            // The official provider packs both tachometers into FanNumber=1.
+            match fan_num {
+                1 => Ok(Some(packed & 0xffff)),
+                _ => Ok(None),
+            }
         }
     }
 
@@ -245,6 +252,29 @@ impl HardwareControl for WindowsHardwareControl {
     fn is_elevated(&self) -> bool {
         self.is_elevated_impl().unwrap_or(false)
     }
+
+    fn get_cpu_temperature(&self) -> Result<Option<f32>> {
+        self.sensors.as_ref().map(|driver| driver.read_package_temperature().map(|sample| sample.celsius)).transpose()
+    }
+}
+
+impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
+    fn write_fan(&mut self, target: crate::core::cooling::FanTarget) -> Result<u32> {
+        target.validate()?;
+        if !self.is_elevated() { bail!("风扇控制需要管理员权限"); }
+        if !super::sensors::cpu_brand().starts_with("AMD Ryzen 7 8745H ") || self.get_feature_value(FeatureKey::FanCount)? != Some(1) {
+            bail!("仅开放已验证的 8745H 单风扇硬件");
+        }
+        unsafe {
+            let input = self.create_in_params("SetFanControl")?;
+            self.set_u8_param(&input, "FanNumber", 1)?;
+            self.set_u8_param(&input, "FanDuty", target.encoded())?;
+            let output = self.invoke_method("SetFanControl", Some(&input))?;
+            self.get_u32_from_result(&output, "ResultStatus")
+        }
+    }
+    fn measured_rpm(&self) -> Result<u32> { self.get_fan_speed(1)?.context("风扇转速不可用") }
+    fn package_temperature(&self) -> Result<f32> { self.get_cpu_temperature()?.context("手动控制需要已加载 WinRing0 和有效 CPU 温度采样") }
 }
 
 impl WindowsHardwareControl {

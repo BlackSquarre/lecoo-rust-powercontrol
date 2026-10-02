@@ -93,7 +93,7 @@ pub struct SystemSnapshot {
     pub power_mode: Option<PowerMode>,
     pub power_mode_error: Option<String>,
     pub fan_speed: Option<u32>,
-    pub cpu_temp: Option<u32>,
+    pub cpu_temp: Option<f32>,
     pub disk_usage: f32,
     pub disk_total: u64,
     pub disk_used: u64,
