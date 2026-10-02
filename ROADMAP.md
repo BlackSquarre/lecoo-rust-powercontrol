@@ -23,17 +23,7 @@ This document records planned work for **Lecoo Rust PowerControl**. Every item b
 
 **Acceptance checks:** the menu reflects the hardware's current profile; selecting a profile uses the same verified hardware-control path as the main UI; errors are visible; opening and exiting the app cleanly adds and removes the tray icon.
 
-### 3. Redesign the interface and add restrained motion
-
-- Replace the current layout with an original visual design for Lecoo Rust PowerControl instead of copying the official control center's presentation.
-- Reorder the main screen around the tasks users need most: current device status, power-profile selection, cooling status, then secondary system-resource details.
-- Give fan controls a clear, dedicated place and keep less-used settings out of the primary control flow.
-- Establish consistent typography, spacing, color, icons, and clear enabled/disabled/error states.
-- Add short, purposeful transitions for page changes, profile selection, gauges, and notifications. Keep motion subtle and ensure it does not delay or obscure controls.
-
-**Acceptance checks:** the primary status and profile controls are immediately apparent; layouts remain readable at supported window sizes; keyboard focus and contrast remain clear; animations do not block input and error states remain visible.
-
-### 4. Fan-speed adjustment
+### 3. Fan-speed adjustment
 
 - First confirm which fan-control methods and safe ranges the compatible hardware firmware actually exposes.
 - Add a fan control that reports the current measured RPM and exposes only supported adjustments, such as a safe manual target or supported fan mode.
@@ -43,9 +33,19 @@ This document records planned work for **Lecoo Rust PowerControl**. Every item b
 
 **Acceptance checks:** only supported values can be submitted; applied settings are read back and verified; invalid values are rejected; failures restore or retain a safe automatic/default setting; tests verify both control behavior and recovery on compatible hardware.
 
+### 4. Redesign the interface and add restrained motion
+
+- Replace the current layout with an original visual design for Lecoo Rust PowerControl instead of copying the official control center's presentation.
+- Reorder the main screen around the tasks users need most: current device status, power-profile selection, cooling status, then secondary system-resource details.
+- Give fan controls a clear, dedicated place and keep less-used settings out of the primary control flow.
+- Establish consistent typography, spacing, color, icons, and clear enabled/disabled/error states.
+- Add short, purposeful transitions for page changes, profile selection, gauges, and notifications. Keep motion subtle and ensure it does not delay or obscure controls.
+
+**Acceptance checks:** the primary status and profile controls are immediately apparent; layouts remain readable at supported window sizes; keyboard focus and contrast remain clear; animations do not block input and error states remain visible.
+
 ## Suggested implementation order
 
-Keep this order unless hardware research changes the dependencies: startup preference, notification-area controls, interface redesign, then fan-speed adjustment. Investigate the fan-control interface and safety limits before implementing the last item. Each feature should include its own validation and user-facing documentation before release.
+Keep this order unless hardware research changes the dependencies: startup preference, notification-area controls, fan-speed adjustment, then interface redesign and animation. Investigate the fan-control interface and safety limits before implementing it. Each feature should include its own validation and user-facing documentation before release.
 
 ---
 
@@ -72,17 +72,7 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 **验收标准：** 菜单状态与硬件当前模式一致；快捷切换使用与主界面相同的硬件控制和读回验证流程；切换错误可见；打开或退出应用时托盘图标能正确创建和清理。
 
-### 3. 重新设计 UI 并加入克制的动画
-
-- 为 Lecoo Rust PowerControl 设计原创界面，不照搬官方控制中心的视觉呈现。
-- 重新安排主界面信息层级，优先展示设备状态和电源模式，其次是散热状态，再展示次要的系统资源信息。
-- 为风扇控制安排清晰、独立的位置；不常用设置从主要操作区移出。
-- 统一字体、间距、配色、图标，以及启用、禁用、错误等状态的视觉表现。
-- 为页面切换、模式选择、仪表和提示加入短促且有意义的过渡动画；动画保持轻量，不延迟操作，也不遮挡控件。
-
-**验收标准：** 打开应用后能立即看清主要状态和模式控件；常用窗口尺寸下内容清晰；键盘焦点和对比度明确；动画不阻塞输入，错误状态始终可见。
-
-### 4. 风扇转速调节
+### 3. 风扇转速调节
 
 - 先确认兼容设备固件实际提供哪些风扇控制接口及安全范围。
 - 显示当前实测转速，并只开放硬件支持的调节方式，例如安全的手动目标值或固件支持的风扇模式。
@@ -92,6 +82,16 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 **验收标准：** 只能提交硬件支持的值；应用会读回并验证设置；非法值会被拒绝；发生故障时恢复或保持安全的自动/默认状态；在兼容硬件上验证正常调节和恢复流程。
 
+### 4. 重新设计 UI 并加入克制的动画
+
+- 为 Lecoo Rust PowerControl 设计原创界面，不照搬官方控制中心的视觉呈现。
+- 重新安排主界面信息层级，优先展示设备状态和电源模式，其次是散热状态，再展示次要的系统资源信息。
+- 为风扇控制安排清晰、独立的位置；不常用设置从主要操作区移出。
+- 统一字体、间距、配色、图标，以及启用、禁用、错误等状态的视觉表现。
+- 为页面切换、模式选择、仪表和提示加入短促且有意义的过渡动画；动画保持轻量，不延迟操作，也不遮挡控件。
+
+**验收标准：** 打开应用后能立即看清主要状态和模式控件；常用窗口尺寸下内容清晰；键盘焦点和对比度明确；动画不阻塞输入，错误状态始终可见。
+
 ## 建议顺序
 
-暂按以下顺序规划：登录启动设置、任务栏托盘快捷控制、界面重设计、风扇转速调节。风扇功能先完成接口和安全范围调查，再进入实现。每项功能发布前都要完成对应验证并补齐用户文档。
+暂按以下顺序规划：登录启动设置、任务栏托盘快捷控制、风扇转速调节、UI 重设计和动画。风扇功能先完成接口和安全范围调查，再进入实现；UI 相关工作放在最后。每项功能发布前都要完成对应验证并补齐用户文档。
