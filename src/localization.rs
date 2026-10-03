@@ -91,6 +91,8 @@ fn english_error(message: &str) -> &'static str {
         "Automatic fan recovery could not be confirmed"
     } else if message.contains("RECOVERY") {
         "Automatic fan control requested by the safety monitor"
+    } else if message.contains("手动风扇目标暂不可用") {
+        "Manual fan targets are unavailable until the thermal sensor is validated for CPU protection"
     } else if message.contains("拒绝手动控制") || message.contains("温度过高") {
         "CPU temperature is too high for manual fan control"
     } else if message.contains("采样无效")

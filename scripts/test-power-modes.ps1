@@ -18,7 +18,13 @@ New-Item -ItemType Directory -Path $taskReportDirectory -Force | Out-Null
 
 # Build before elevation; the test executable shares the GUI's production library.
 if (!$SkipBuild) {
-    & (Join-Path $PSScriptRoot 'build-release.ps1')
+    Push-Location $taskRoot
+    try {
+        cargo build --release --locked --offline --bin lecoo-control-center --bin hardware_test
+        if ($LASTEXITCODE -ne 0) { throw 'Hardware test build failed' }
+        New-Item -ItemType Directory -Path (Join-Path $taskRoot 'dist') -Force | Out-Null
+        Copy-Item target/release/lecoo-control-center.exe,target/release/hardware_test.exe -Destination (Join-Path $taskRoot 'dist') -Force
+    } finally { Pop-Location }
 }
 
 $taskIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()

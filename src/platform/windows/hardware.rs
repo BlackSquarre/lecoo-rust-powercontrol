@@ -9,12 +9,39 @@ use windows::{
 const WMI_NAMESPACE: &str = "root\\WMI";
 const WMI_CLASS: &str = "PowerSwitchInterface";
 const INSTANCE_NAME: &str = "ACPI\\PNP0C14\\IP3POWERSWITCH_0";
+const THERMAL_ZONE_INSTANCE: &str = "ACPI\\ThermalZone\\TZ01_0";
+
+fn acpi_celsius(raw: u32) -> Option<f32> {
+    let celsius = raw as f64 / 10.0 - 273.15;
+    (raw != 0 && (0.0..=125.0).contains(&celsius)).then_some(celsius as f32)
+}
+
+fn cpu_brand() -> String {
+    #[cfg(target_arch = "x86_64")]
+    {
+        use std::arch::x86_64::__cpuid;
+        if __cpuid(0x80000000).eax < 0x80000004 {
+            return String::new();
+        }
+        let mut bytes = Vec::with_capacity(48);
+        for leaf in 0x80000002..=0x80000004 {
+            let result = __cpuid(leaf);
+            for value in [result.eax, result.ebx, result.ecx, result.edx] {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        String::from_utf8_lossy(&bytes)
+            .trim_matches('\0')
+            .trim()
+            .to_owned()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    String::new()
+}
 
 pub struct WindowsHardwareControl {
     wmi_service: IWbemServices,
     instance_path: BSTR,
-    sensors: Option<super::sensors::ExistingWinRing0>,
-    previous_energy: Option<super::sensors::CpuPackageEnergyReading>,
 }
 
 // COM 对象只在初始化它的 GUI 线程上使用。
@@ -63,8 +90,6 @@ impl WindowsHardwareControl {
             Ok(Self {
                 wmi_service,
                 instance_path,
-                sensors: super::sensors::ExistingWinRing0::open().ok(),
-                previous_energy: None,
             })
         }
     }
@@ -269,33 +294,37 @@ impl HardwareControl for WindowsHardwareControl {
         self.is_elevated_impl().unwrap_or(false)
     }
 
-    fn get_cpu_temperature(&self) -> Result<Option<f32>> {
-        self.sensors
-            .as_ref()
-            .map(|driver| {
-                driver
-                    .read_package_temperature()
-                    .map(|sample| sample.celsius)
-            })
-            .transpose()
-    }
-
-    fn get_cpu_package_power(&mut self) -> Result<Option<f64>> {
-        let Some(driver) = &self.sensors else {
-            return Ok(None);
-        };
-        let current = match driver.read_package_energy() {
-            Ok(sample) => sample,
-            Err(error) => {
-                self.previous_energy = None;
-                return Err(error);
+    fn get_thermal_zone_temperature(&self) -> Result<Option<f32>> {
+        unsafe {
+            let instances = self
+                .wmi_service
+                .CreateInstanceEnum(
+                    &BSTR::from("MSAcpi_ThermalZoneTemperature"),
+                    WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                    None,
+                )
+                .context("枚举 ACPI 热区失败")?;
+            loop {
+                let mut objects = [None];
+                let mut returned = 0;
+                let status = instances.Next(2000, &mut objects, &mut returned);
+                status.ok().context("读取 ACPI 热区失败")?;
+                if status.0 == WBEM_S_TIMEDOUT.0 {
+                    bail!("读取 ACPI 热区超时");
+                }
+                if returned == 0 {
+                    return Ok(None);
+                }
+                let object = objects[0].take().context("ACPI 热区对象为空")?;
+                let mut name = VARIANT::default();
+                object.Get(&BSTR::from("InstanceName"), 0, &mut name, None, None)?;
+                let name = BSTR::try_from(&name)?.to_string();
+                if name.eq_ignore_ascii_case(THERMAL_ZONE_INSTANCE) {
+                    let raw = self.get_u32_from_result(&object, "CurrentTemperature")?;
+                    return Ok(acpi_celsius(raw));
+                }
             }
-        };
-        // Store a fresh baseline even after a suspend, counter reset or invalid interval.
-        let previous = self.previous_energy.replace(current);
-        previous
-            .map(|previous| current.watts_since(&previous))
-            .transpose()
+        }
     }
 }
 
@@ -305,10 +334,13 @@ impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
         if !self.is_elevated() {
             bail!("风扇控制需要管理员权限");
         }
-        if !super::sensors::cpu_brand().starts_with("AMD Ryzen 7 8745H ")
+        if !cpu_brand().starts_with("AMD Ryzen 7 8745H ")
             || self.get_feature_value(FeatureKey::FanCount)? != Some(1)
         {
             bail!("仅开放已验证的 8745H 单风扇硬件");
+        }
+        if matches!(target, crate::core::cooling::FanTarget::Percent(35..=99)) {
+            bail!("ACPI 热区尚未验证为 CPU 保护温度，手动风扇目标暂不可用");
         }
         unsafe {
             let input = self.create_in_params("SetFanControl")?;
@@ -321,9 +353,22 @@ impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
     fn measured_rpm(&self) -> Result<u32> {
         self.get_fan_speed(1)?.context("风扇转速不可用")
     }
-    fn package_temperature(&self) -> Result<f32> {
-        self.get_cpu_temperature()?
-            .context("手动控制需要已加载 WinRing0 和有效 CPU 温度采样")
+    fn temperature(&self) -> Result<f32> {
+        self.get_thermal_zone_temperature()?
+            .context("ACPI 热区温度不可用")
+    }
+}
+
+#[cfg(test)]
+mod thermal_zone_tests {
+    use super::acpi_celsius;
+
+    #[test]
+    fn converts_tenths_kelvin_and_rejects_invalid_values() {
+        assert!((acpi_celsius(3112).unwrap() - 38.05).abs() < 0.001);
+        for raw in [0, 2731, 2147483647, u32::MAX, 5000] {
+            assert!(acpi_celsius(raw).is_none());
+        }
     }
 }
 

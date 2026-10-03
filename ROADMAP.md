@@ -1,3 +1,6 @@
+> v0.0.3: Native UI, ZIP and installer are released. Package power and WinRing0 access were removed. Auto/Maximum remain available; reduced manual fan targets are disabled pending validated CPU thermal protection. Historical research below refers to earlier builds.
+> v0.0.3 已发布原生界面、ZIP 与安装包；移除功率及 WinRing0 调用。保留自动/最大风量，低于最大风量的手动目标待 CPU 保护验证后开放。下方早期调查描述旧构建。
+
 # Roadmap
 
 This document records planned work for **Lecoo Rust PowerControl**. Items 1–3 and the native interface are implemented in the current working source; motion is deferred to prioritize memory usage. Current functionality and verification limits are documented in [the feature guide](docs/features.md) and [the current UI guide](docs/native-ui.md).

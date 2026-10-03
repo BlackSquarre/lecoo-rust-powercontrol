@@ -6,8 +6,7 @@
 
 | 中文 | English | 含义 |
 | --- | --- | --- |
-| CPU 温度 | CPU temperature | AMD Tctl/Tdie 温度源 |
-| CPU Package 功率 | CPU package power | 采样区间的封装平均功率，单位 W |
+| ACPI 热区温度 | ACPI thermal zone | 固件热区读数，不代表已验证的 CPU Package 温度 |
 | 风扇转速 | Fan speed | 实测转速，单位 RPM |
 | 内存 / 磁盘 | Memory / Disk | 已用量及总量，容量单位保持 GiB |
 | 电源模式 | Power mode | 固件电源配置 |
@@ -26,10 +25,10 @@
 | 哔哩哔哩 / 项目主页 | Bilibili / Project website | 默认浏览器中的外部链接 |
 | 第三方声明与版权 | Third-party notices | 依赖声明与原文许可证 |
 | 保留所有权利。 | All rights reserved. | 本项目的版权声明 |
-| 不可用 | Unavailable | 读取失败或尚未形成有效功率采样 |
+| 不可用 | Unavailable | 读取失败或无有效读数 |
 | 记住我的选择 | Remember my choice | 关闭对话框中的持久化选择 |
 
-英文采用一致的句首大写风格；CPU、RPM、W、GiB 保持专业缩写。品牌名、作者署名和许可证原文不作推测性翻译。错误提示区分拒绝操作、不可用采样与恢复请求，不把自动恢复请求写成已确定恢复成功。
+英文采用一致的句首大写风格；CPU、RPM、GiB 保持专业缩写。品牌名、作者署名和许可证原文不作推测性翻译。错误提示区分拒绝操作、不可用采样与恢复请求，不把自动恢复请求写成已确定恢复成功。
 
 ## 关于
 

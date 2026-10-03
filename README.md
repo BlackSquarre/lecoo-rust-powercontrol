@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.2](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) · **Language:** [简体中文](README.zh-CN.md)
+**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.3](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) · **Language:** [简体中文](README.zh-CN.md)
 
 Lecoo Rust PowerControl is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
 
@@ -20,23 +20,25 @@ Lecoo Rust PowerControl is an independent community project. It is not affiliate
 
 ## Features
 
-The current source uses Windows controls with automatic light/dark theming, fan-slider submission and a remembered close choice. These UI changes are not yet in the published v0.0.2 ZIP; see the [current UI guide](docs/native-ui.md).
+Compact native Windows controls support system themes, Chinese/English switching, About and a remembered close choice; see the [UI guide](docs/native-ui.md).
 
 - Switch between **Quiet**, **Balanced**, and **Performance** power profiles.
 - Read the active profile back from the hardware after a change.
-- View measured fan RPM and native CPU Package temperature on the supported device, plus system memory and disk usage.
+- View measured fan RPM and ACPI thermal-zone temperature, plus system memory and disk usage.
 - Run the GUI and hardware test utility against the same Rust hardware-control library.
 
-Hardware access requires administrator privileges and a compatible Lecoo WMI provider. The current source also includes opt-in elevated login startup, tray profile controls, one app instance per session, a close-to-tray preference, and guarded Auto/Maximum/35–100% fan requests. Native temperature and manual cooling currently require the verified 8745H single-fan path and an already loaded WinRing0 driver. The firmware cannot report actual duty or control mode; requested targets are distinguished from measured RPM. See the [feature guide](docs/features.md). Hardware switching has been verified on one Lecoo system.
+Hardware access requires administrator privileges and a compatible Lecoo WMI provider. Opt-in sign-in startup, tray controls, one instance per session and Auto/Maximum fan targets are available. Reduced fan targets are disabled until the thermal zone is validated for CPU protection. No WinRing0 access or sensor driver, .NET or separate VC++ runtime is required. Firmware reports RPM, without duty or control-mode readback; see the [feature guide](docs/features.md).
 
 ## Download
 
-Download the Windows x64 package from the [v0.0.2 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2):
+Download the Windows x64 package from the [v0.0.3 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3):
 
-- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip` — application, hardware test utility, and executable checksums.
-- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip.sha256` — checksum for the ZIP archive.
+- `lecoo-rust-powercontrol-v0.0.3-windows-x64.zip` — application, hardware test utility, and executable checksums.
+- `lecoo-rust-powercontrol-v0.0.3-windows-x64-setup.exe` — installer with an uninstaller.
 
-Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) for validation details and known limitations.
+Enable “Start at sign-in (minimized to tray)” in Settings for automatic startup; it is off by default.
+
+Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) for validation details and known limitations.
 
 ## Build from source
 
@@ -47,7 +49,7 @@ cargo fetch --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
 
-The script builds the app and hardware test utility, copies them to `dist/`, and creates SHA-256 checksums. GitHub Actions builds release binaries from version tags using the locked dependencies.
+Packaging also requires Inno Setup 6. The script creates both ZIP and installer in `dist/`. GitHub Actions produces both formats for every version tag and checks installation and removal. The native C runtime is statically linked.
 
 ## Automated hardware test
 
@@ -63,7 +65,7 @@ See [docs/testing.md](docs/testing.md) for parameters and recovery behavior, and
 
 ## Roadmap
 
-Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integration, and guarded fan control are implemented in the current source; visual redesign and animation remain planned. These additions are included in the v0.0.2 package.
+Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integration, the native interface and Auto/Maximum fan control are implemented. Animation is deferred to keep resource use low.
 
 ## Project layout
 
@@ -77,6 +79,3 @@ docs/      Setup, testing, and hardware-interface documentation
 ## License
 
 No open-source license is granted. Copyright remains with BlackSquarre; public access to this repository does not grant permission to redistribute or reuse the code.
-
-
-The compact C source now includes CPU package watts, immediate Chinese/English switching, and About. Choose the language in Settings using the gear beside the device model. See [localization](docs/localization.md). These changes have not replaced the published v0.0.2 ZIP.

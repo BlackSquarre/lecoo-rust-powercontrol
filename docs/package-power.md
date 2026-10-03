@@ -1,3 +1,5 @@
+> 历史调查记录：v0.0.3 已移除 WinRing0 采样代码、探针和功率显示。当前温度使用 ACPI 热区 WMI；以下记录仅描述此前实现与实验。
+
 # CPU Package 温度与功率
 
 验证日期：2026-10-03；设备：AMD Ryzen 7 8745H。当前 GUI 的 CPU 温度来自 `src/platform/windows/sensors.rs`，通过现有 WinRing0 读取 AMD SMN `THM_TCON_TEMP`（`0x59800`）。OpenHardwareMonitor 将此源命名为 CPU Package；LibreHardwareMonitor 使用 Core (Tctl/Tdie) 命名。它不是所有核心温度的算术平均值。当前生产代码没有用未确认来源的 WMI 温度代替它。

@@ -33,7 +33,11 @@ impl FanTarget {
 pub trait CoolingIo {
     fn write_fan(&mut self, target: FanTarget) -> Result<u32>;
     fn measured_rpm(&self) -> Result<u32>;
-    fn package_temperature(&self) -> Result<f32>;
+    fn temperature(&self) -> Result<f32>;
+    /// Reduced fan targets require a sensor validated for CPU protection.
+    fn supports_manual_temperature_guard(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -61,19 +65,35 @@ impl<T: CoolingIo> CoolingController<T> {
         self.target
     }
     pub fn sample(&self) -> Result<(f32, u32)> {
-        let temp = self.io.package_temperature()?;
+        let temp = self.io.temperature()?;
         let rpm = self.io.measured_rpm()?;
         if !temp.is_finite() || !(0.0..=125.0).contains(&temp) || rpm == 0 {
             bail!("温度或风扇采样无效");
         }
         Ok((temp, rpm))
     }
+    pub fn measured_rpm(&self) -> Result<u32> {
+        let rpm = self.io.measured_rpm()?;
+        if rpm == 0 {
+            bail!("风扇转速采样无效");
+        }
+        Ok(rpm)
+    }
     pub fn apply(&mut self, target: FanTarget) -> Result<FanReceipt> {
         target.validate()?; // Reject invalid values before all hardware calls.
         if target == FanTarget::Auto {
             return self.restore_auto();
         }
-        let (temp, _) = match self.sample() {
+        if target != FanTarget::Percent(100) && !self.io.supports_manual_temperature_guard() {
+            bail!("ACPI 热区尚未验证为 CPU 保护温度，手动风扇目标暂不可用");
+        }
+        let maximum = target == FanTarget::Percent(100);
+        let sample = if maximum {
+            self.measured_rpm().map(|rpm| (0.0, rpm))
+        } else {
+            self.sample()
+        };
+        let (temp, _) = match sample {
             Ok(value) => value,
             Err(error) => {
                 if self.armed {
@@ -97,7 +117,11 @@ impl<T: CoolingIo> CoolingController<T> {
             if status == 255 {
                 bail!("固件拒绝风扇请求，ResultStatus=255");
             }
-            let (temp, rpm) = self.sample()?;
+            let (temp, rpm) = if maximum {
+                (0.0, self.measured_rpm()?)
+            } else {
+                self.sample()?
+            };
             if temp >= MAX_MANUAL_TEMP {
                 bail!("写入后温度过高: {temp:.1}°C");
             }
@@ -160,7 +184,11 @@ impl<T: CoolingIo> CoolingController<T> {
         if !self.armed {
             return Ok(());
         }
-        let sample = self.sample();
+        let sample = if self.target == FanTarget::Percent(100) {
+            self.measured_rpm().map(|rpm| (0.0, rpm))
+        } else {
+            self.sample()
+        };
         let reason = if heartbeat_age >= HEARTBEAT_TIMEOUT {
             Some("主程序心跳超时")
         } else if sample
@@ -207,8 +235,11 @@ mod tests {
         fn measured_rpm(&self) -> Result<u32> {
             Ok(2000)
         }
-        fn package_temperature(&self) -> Result<f32> {
+        fn temperature(&self) -> Result<f32> {
             Ok(self.temp)
+        }
+        fn supports_manual_temperature_guard(&self) -> bool {
+            true
         }
     }
     fn controller(temp: f32, fail: bool) -> (CoolingController<Fake>, Rc<RefCell<Vec<FanTarget>>>) {
@@ -270,6 +301,33 @@ mod tests {
         }
         assert_eq!(FanTarget::Auto.encoded(), 101);
     }
+    #[test]
+    fn unvalidated_temperature_refuses_reduced_targets_but_allows_maximum() {
+        struct Unvalidated(Rc<RefCell<Vec<FanTarget>>>);
+        impl CoolingIo for Unvalidated {
+            fn write_fan(&mut self, target: FanTarget) -> Result<u32> {
+                self.0.borrow_mut().push(target);
+                Ok(0)
+            }
+            fn measured_rpm(&self) -> Result<u32> {
+                Ok(2000)
+            }
+            fn temperature(&self) -> Result<f32> {
+                bail!("thermal zone unavailable")
+            }
+        }
+        let writes = Rc::new(RefCell::new(Vec::new()));
+        let mut ctrl = CoolingController::new(Unvalidated(writes.clone()));
+        assert!(ctrl.apply(FanTarget::Percent(50)).is_err());
+        assert!(writes.borrow().is_empty());
+        ctrl.apply(FanTarget::Percent(100)).unwrap();
+        ctrl.guard(Duration::ZERO).unwrap();
+        assert!(ctrl.guard(HEARTBEAT_TIMEOUT).is_err());
+        assert_eq!(
+            *writes.borrow(),
+            vec![FanTarget::Percent(100), FanTarget::Auto]
+        );
+    }
     struct Faulty {
         writes: Rc<RefCell<Vec<FanTarget>>>,
         post_temp: f32,
@@ -291,7 +349,7 @@ mod tests {
         fn measured_rpm(&self) -> Result<u32> {
             Ok(2000)
         }
-        fn package_temperature(&self) -> Result<f32> {
+        fn temperature(&self) -> Result<f32> {
             Ok(
                 if self
                     .writes
@@ -304,6 +362,9 @@ mod tests {
                     50.0
                 },
             )
+        }
+        fn supports_manual_temperature_guard(&self) -> bool {
+            true
         }
     }
     #[test]

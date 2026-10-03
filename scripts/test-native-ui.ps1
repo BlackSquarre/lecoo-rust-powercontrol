@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param([string]$Executable,[string]$ReportPath)
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
@@ -111,9 +111,9 @@ try{
   $name=if($light -eq 1){'light'}else{'dark'};Capture $taskWindow $name
   $taskReport.Checks+="System $name theme switches client area and title bar"
  }
- if((Caption $taskWindow 207) -notmatch '^[0-9.]+ W$'){throw 'Package power is not available in dashboard'}
- $taskReport['PackagePower']=Caption $taskWindow 207
- $taskReport['LayoutRects']=@(foreach($id in @(200,207,201,202,204,140,331)){$r=[NativeUiTest+Rect]::new();$null=[NativeUiTest]::GetWindowRect([NativeUiTest]::GetDlgItem($taskWindow,$id),[ref]$r);[pscustomobject]@{Id=$id;Top=$r.Top;Left=$r.Left;Right=$r.Right;Bottom=$r.Bottom}})
+ if((Caption $taskWindow 200) -notmatch '^[0-9.]+ °C$'){throw 'Thermal-zone reading unavailable'}
+ $taskReport['ThermalZone']=Caption $taskWindow 200
+ $taskReport['LayoutRects']=@(foreach($id in @(200,201,202,203,204,140,331)){$r=[NativeUiTest+Rect]::new();$null=[NativeUiTest]::GetWindowRect([NativeUiTest]::GetDlgItem($taskWindow,$id),[ref]$r);[pscustomobject]@{Id=$id;Top=$r.Top;Left=$r.Left;Right=$r.Right;Bottom=$r.Bottom}})
  Click $taskWindow 140;$settings=SettingsWindow;if(!$settings){throw 'Gear did not open settings'}
  # Focus/dropdown notifications must not clear or translate the native combo selection.
  $languageControl=[NativeUiTest]::GetDlgItem($settings,141)
@@ -122,13 +122,13 @@ try{
  foreach($language in @(2,1)){
   SelectCombo $settings 141 $language
   $english=$language -eq 2
-  $expected=if($english){'CPU temperature'}else{'CPU 温度'}
+  $expected=if($english){'ACPI thermal zone'}else{'ACPI 热区温度'}
   if((Caption $taskWindow 300) -ne $expected){throw 'Language did not update main window immediately'}
   $expected=if($english){'Settings'}else{'设置'}
   if([NativeUiTest]::Text($settings) -ne $expected){throw 'Settings title not localized'}
   $name=if($english){'english'}else{'chinese'};Capture $taskWindow ($name+'-dark');Capture $settings ($name+'-settings-dark')
   Click $settings 143;$about=AboutWindow;if(!$about){throw 'About window did not open'}
-  $expected=if($english){'Version 0.0.2'}else{'版本 0.0.2'}
+  $expected=if($english){'Version 0.0.3'}else{'版本 0.0.3'}
   if((Caption $about 342) -ne $expected){throw 'About version not localized'}
   if((Caption $about 343) -notmatch ('© '+(Get-Date).Year+' ')){throw 'About copyright year is not current'}
   Capture $about ($name+'-about-dark')
@@ -151,7 +151,7 @@ try{
  if(!$taskProcess.WaitForExit(10000)){throw 'Restart for language persistence failed'}
  $taskProcess=Start-Process -FilePath $Executable -WindowStyle Normal -PassThru
  Start-Sleep -Seconds 3;$taskWindow=MainWindow
- if((Caption $taskWindow 300) -ne 'CPU temperature'){throw 'English did not persist after restart'}
+ if((Caption $taskWindow 300) -ne 'ACPI thermal zone'){throw 'English did not persist after restart'}
  Set-ItemProperty -LiteralPath $taskThemeKey -Name AppsUseLightTheme -Value 1
  $null=[NativeUiTest]::PostMessage($taskWindow,0x1A,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Seconds 3
  Capture $taskWindow 'english-light'
@@ -161,35 +161,30 @@ try{
  Click $settings 143;$about=AboutWindow;Capture $about 'chinese-about-light'
  $null=[NativeUiTest]::PostMessage($about,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 400
  $null=[NativeUiTest]::PostMessage($settings,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 500
- $taskReport.Checks+='Live CPU package watts, compact grid, language switch/persistence, About/version/year and complete notices work'
+ $taskReport.Checks+='ACPI thermal-zone reading, compact grid, language switch/persistence, About/version/year and complete notices work'
  $slider=[NativeUiTest]::GetDlgItem($taskWindow,122)
- $null=[NativeUiTest]::SendMessage($slider,0x405,[IntPtr]1,[IntPtr]35)
- $null=[NativeUiTest]::PostMessage($taskWindow,0x114,[IntPtr]5,$slider);Start-Sleep -Seconds 1
- if(@(Get-CimInstance Win32_Process | Where-Object {$_.ParentProcessId -eq $taskProcess.Id -and $_.CommandLine -like '*--fan-worker*'}).Count -ne 0){throw 'Dragging wrote fan before release'}
- $null=[NativeUiTest]::PostMessage($taskWindow,0x114,[IntPtr]8,$slider);Start-Sleep -Seconds 3
- if((Target $taskWindow) -ne 35){throw 'Slider release did not commit 35%'}
- $null=[NativeUiTest]::SendMessage($slider,0x405,[IntPtr]1,[IntPtr]50)
- $null=[NativeUiTest]::PostMessage($taskWindow,0x114,[IntPtr]1,$slider);Start-Sleep -Seconds 2
- if((Target $taskWindow) -ne 50){throw 'Keyboard/step slider input did not commit'}
+ if([NativeUiTest]::IsWindowEnabled($slider) -or [NativeUiTest]::IsWindowEnabled([NativeUiTest]::GetDlgItem($taskWindow,123))){throw 'Reduced manual controls must be disabled'}
+ Click $taskWindow 121;Start-Sleep -Seconds 3
+ if((Target $taskWindow) -ne 100){throw 'Maximum fan request did not commit'}
  Click $taskWindow 140;$settings=SettingsWindow;Click $settings 143;$about=AboutWindow;Click $about 146
  $notices=@([NativeUiTest]::Windows($taskProcess.Id) | Where-Object {[NativeUiTest]::GetDlgItem($_,360) -ne [IntPtr]::Zero}) | Select-Object -First 1
  Start-Sleep -Seconds 4
- if((Target $taskWindow) -ne 50 -or [NativeUiTest]::GetProp($taskWindow,'Lecoo.FanReady').ToInt64() -ne 2){throw 'Settings/About/notices interrupted manual fan heartbeat'}
+ if((Target $taskWindow) -ne 100 -or [NativeUiTest]::GetProp($taskWindow,'Lecoo.FanReady').ToInt64() -ne 2){throw 'Settings/About/notices interrupted maximum fan heartbeat'}
  $null=[NativeUiTest]::PostMessage($notices,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 300
  $null=[NativeUiTest]::PostMessage($about,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 300
  $null=[NativeUiTest]::PostMessage($settings,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 400
- $taskReport.Checks+='Manual fan heartbeat continues through Settings/About/notices'
- $taskReport.Checks+='Slider drag defers writes; release and keyboard settle commit automatically'
+ $taskReport.Checks+='Maximum fan heartbeat continues through Settings/About/notices'
+ $taskReport.Checks+='Reduced manual controls disabled; maximum fan request available'
  $null=[NativeUiTest]::PostMessage($taskWindow,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Seconds 1
  $dialog=DialogWindow;if(!$dialog -or [NativeUiTest]::IsWindowEnabled($taskWindow)){throw 'Close choice dialog missing or owner not disabled'}
  Start-Sleep -Seconds 4
- if((Target $taskWindow) -ne 50 -or (Caption $taskWindow 206) -match 'RECOVERY'){throw 'Close dialog interrupted heartbeat'}
+ if((Target $taskWindow) -ne 100 -or (Caption $taskWindow 206) -match 'RECOVERY'){throw 'Close dialog interrupted heartbeat'}
  Capture $dialog 'close-dialog';Click $dialog 901
  if([NativeUiTest]::IsWindow($taskWindow)){throw 'Tray choice did not destroy UI'}
- $taskReport.Memory+=Sample 'HiddenManual'
+ $taskReport.Memory+=Sample 'HiddenMaximum'
  $taskWindow=Reopen
  if($taskWindow -eq [IntPtr]::Zero){throw 'UI not recreated'}
- $taskReport.Checks+='Close dialog keeps manual heartbeat alive; unremembered tray choice recreates UI'
+ $taskReport.Checks+='Close dialog keeps maximum heartbeat alive; unremembered tray choice recreates UI'
  $null=[NativeUiTest]::PostMessage($taskWindow,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Seconds 1
  $dialog=DialogWindow;Click $dialog 903;Click $dialog 901
  if([IO.File]::ReadAllText($taskPreference) -notmatch '(?m)^close_behavior=tray$'){throw 'Remembered tray choice not saved'}

@@ -43,12 +43,11 @@ pub const RESET_CLOSE: u16 = 132;
 pub const SETTINGS: u16 = 140;
 pub const LANGUAGE: u16 = 141;
 pub const CLOSE_BEHAVIOR: u16 = 142;
-pub const PACKAGE_POWER: u16 = 207;
 pub const ABOUT: u16 = 143;
 pub const BILIBILI: u16 = 144;
 pub const PROJECT: u16 = 145;
 pub const NOTICES: u16 = 146;
-pub const CPU: u16 = 200;
+pub const THERMAL_ZONE: u16 = 200;
 pub const RPM: u16 = 201;
 pub const MEMORY: u16 = 202;
 pub const MEMORY_BAR: u16 = 203;
@@ -667,14 +666,8 @@ impl NativeWindow {
     pub fn new(percent: u8) -> Result<Self> {
         let ui = Self::create(None, false)?;
         for (id, text, kind) in [
-            (300, tr("CPU 温度", "CPU temperature"), Kind::Muted),
-            (CPU, "—", Kind::Number),
-            (
-                301,
-                tr("CPU Package 功率", "CPU package power"),
-                Kind::Muted,
-            ),
-            (PACKAGE_POWER, "—", Kind::Number),
+            (300, tr("ACPI 热区温度", "ACPI thermal zone"), Kind::Muted),
+            (THERMAL_ZONE, "—", Kind::Number),
             (302, tr("风扇转速", "Fan speed"), Kind::Muted),
             (RPM, "—", Kind::Number),
             (303, tr("内存", "Memory"), Kind::Small),
@@ -1278,16 +1271,14 @@ impl NativeWindow {
                 let rx = margin + tile + gap + 12;
                 let inner = tile - 24;
                 put(300, lx, 24, inner, 20);
-                put(CPU, lx, 69, inner, 38);
-                put(301, rx, 24, inner, 20);
-                put(PACKAGE_POWER, rx, 69, inner, 38);
-                put(302, lx, 146, inner, 20);
-                put(RPM, lx, 187, inner, 38);
-                put(303, rx, 142, inner, 17);
-                put(MEMORY, rx, 159, inner, 17);
-                put(MEMORY_BAR, rx, 180, inner, 6);
-                put(304, rx, 195, inner, 17);
-                put(DISK, rx, 212, inner, 17);
+                put(THERMAL_ZONE, lx, 69, inner, 38);
+                put(302, rx, 24, inner, 20);
+                put(RPM, rx, 69, inner, 38);
+                put(303, lx, 146, inner, 20);
+                put(MEMORY, lx, 187, inner, 20);
+                put(MEMORY_BAR, lx, 233, inner, 6);
+                put(304, rx, 146, inner, 20);
+                put(DISK, rx, 187, inner, 20);
                 put(DISK_BAR, rx, 233, inner, 6);
                 put(310, lx, 268, total - 24, 24);
                 let option = (total - 24) / 3;
@@ -1363,8 +1354,7 @@ impl NativeWindow {
             (PROJECT, tr("项目主页", "Project website")),
             (NOTICES, tr("第三方声明与版权", "Third-party notices")),
             (344, tr("保留所有权利。", "All rights reserved.")),
-            (300, tr("CPU 温度", "CPU temperature")),
-            (301, tr("CPU Package 功率", "CPU package power")),
+            (300, tr("ACPI 热区温度", "ACPI thermal zone")),
             (302, tr("风扇转速", "Fan speed")),
             (303, tr("内存", "Memory")),
             (304, tr("磁盘", "Disk")),

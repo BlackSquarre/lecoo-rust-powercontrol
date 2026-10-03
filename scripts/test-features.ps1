@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param([switch]$SkipBuild, [string]$Executable, [string]$UnitTestExecutable, [string]$ReportPath)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
@@ -118,26 +118,29 @@ try {
     if (!$taskReport.Gui[0].Hidden -or !$taskReport.Gui[0].TrayRegistered) { throw 'Tray hiding failed' }
     if ($taskReport.Gui[0].Backend -eq 'Win32' -and ($taskReport.Gui[0].ControlCount -ne 0 -or $taskReport.Gui[0].WindowsDestroyed -lt 1)) { throw 'Native window controls were not released on hide' }
     if (!($taskReport.Gui | Where-Object { $_.OpenRequests -ge 1 -and !$_.Hidden })) { throw 'Second launch failed to reopen existing window' }
-    if (!($taskReport.Gui | Where-Object { $_.FanReady -and $_.FanTarget -eq 50 })) { throw 'GUI manual fan path was not exercised' }
-    if (!($taskReport.Gui | Where-Object { $_.Hidden -and !$_.WindowVisible -and $_.FanTarget -eq 50 -and $_.Seconds -ge 12 })) { throw 'Hidden window did not keep manual-session heartbeats alive' }
+    if (!($taskReport.Gui | Where-Object { $_.FanReady -and $_.FanTarget -eq 100 })) { throw 'GUI maximum fan path was not exercised' }
+    if (!($taskReport.Gui | Where-Object { $_.Hidden -and !$_.WindowVisible -and $_.FanTarget -eq 100 -and $_.Seconds -ge 12 })) { throw 'Hidden window did not keep maximum-session heartbeats alive' }
     $taskReport['RpmAfterGuiExit']=Read-Fan
     $taskWorker=New-Captured $Executable '--fan-worker'
     $taskLine=$taskWorker.StandardOutput.ReadLineAsync()
     Drain-Worker 2 $true
     if (!($taskLines | Where-Object { $_ -eq 'READY' })) { throw ('Worker not ready: '+($taskLines -join ';')) }
-    foreach ($percent in @(35,50,100)) {
+    foreach ($percent in @(100)) {
         Send-Worker "P $percent"; Drain-Worker 6 $true
         $rpm=Read-Fan; $taskReport.Fan+=@{Target=$percent;Rpm=$rpm}
         if ($rpm -le 0) { throw 'Invalid measured RPM' }
     }
-    if ($taskReport.Fan[2].Rpm -le $taskReport.Fan[0].Rpm) { throw 'Maximum fan request did not increase RPM' }
+    foreach ($percent in @(35,50,99)) {
+        Send-Worker "P $percent"; Drain-Worker 1 $true
+        if (!($taskLines | Where-Object { $_ -like 'ERROR *ACPI*' })) { throw 'Unvalidated reduced fan target was not rejected' }
+    }
     Send-Worker 'P 34'; Drain-Worker 1 $true
     if (!($taskLines | Where-Object { $_ -like 'ERROR *35*100*' })) { throw 'Invalid fan value was not rejected' }
-    Send-Worker 'P 50'; Drain-Worker 1 $true
+    Send-Worker 'P 100'; Drain-Worker 1 $true
     Drain-Worker 4.5 $false
     if (!($taskLines | Where-Object { $_ -like 'RECOVERY 101 *' })) { throw 'Heartbeat timeout did not recover automatic control' }
     $taskReport.Fan+=@{Target='AutoAfterHeartbeatTimeout';Rpm=(Read-Fan)}
-    Send-Worker 'P 50'; Drain-Worker 1 $true
+    Send-Worker 'P 100'; Drain-Worker 1 $true
     $taskWorker.StandardInput.Close(); Drain-Worker 1 $false
     if (!$taskWorker.WaitForExit(10000) -or $taskWorker.ExitCode -ne 0) { throw 'EOF recovery worker failed' }
     if (!($taskLines | Where-Object { $_ -eq 'STOPPED' })) { throw 'EOF automatic restoration was not acknowledged' }

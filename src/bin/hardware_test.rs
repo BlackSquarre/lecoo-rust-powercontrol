@@ -9,14 +9,22 @@ fn run() -> Result<()> {
     // Validate arguments before creating a connection or attempting any write.
     let requested_mode = match arguments.as_slice() {
         [] => None,
+        [operation] if operation == "--thermal-zone" => None,
         [operation, value] if operation == "--set-mode" => Some(
             PowerMode::from_u32(value.parse().context("Mode must be 0, 1 or 2")?)
                 .context("Mode must be 0, 1 or 2")?,
         ),
-        _ => bail!("Usage: hardware_test.exe [--set-mode 0|1|2]"),
+        _ => bail!("Usage: hardware_test.exe [--thermal-zone|--set-mode 0|1|2]"),
     };
     let _com = ComGuard::new()?;
     let mut hardware = WindowsHardwareControl::new()?;
+    if arguments.as_slice() == ["--thermal-zone"] {
+        println!(
+            "THERMAL_ZONE_C={:?}",
+            hardware.get_thermal_zone_temperature()?
+        );
+        return Ok(());
+    }
     if !hardware.is_elevated() {
         bail!("Administrator privileges are required on this device");
     }
@@ -28,8 +36,14 @@ fn run() -> Result<()> {
     println!("MODE={}", hardware.get_power_mode()? as u32);
     println!("FAN={:?}", hardware.get_fan_speed(1)?);
     println!("TEMP={:?}", hardware.get_hw_temp(1)?);
-    println!("MODE_COUNT={:?}", hardware.get_feature_value(FeatureKey::ModeCount)?);
-    println!("FAN_COUNT={:?}", hardware.get_feature_value(FeatureKey::FanCount)?);
+    println!(
+        "MODE_COUNT={:?}",
+        hardware.get_feature_value(FeatureKey::ModeCount)?
+    );
+    println!(
+        "FAN_COUNT={:?}",
+        hardware.get_feature_value(FeatureKey::FanCount)?
+    );
     Ok(())
 }
 

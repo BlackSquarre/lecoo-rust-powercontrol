@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.0.2](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) · **Language:** [English](README.md)
+**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.0.3](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) · **Language:** [English](README.md)
 
 Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属、合作或背书关系。
 
@@ -20,23 +20,25 @@ Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属�
 
 ## 功能
 
-当前源码已改用 Windows 控件，支持系统深浅色主题、风扇滑条自动提交和可记住的关闭选择；这些界面变更尚未发布到 v0.0.2 ZIP，见[当前界面说明](docs/native-ui.md)。
+使用紧凑的 Windows 原生界面，支持系统深浅色主题、中英文切换、关于窗口和可记住的关闭选择；见[界面说明](docs/native-ui.md)。
 
 - 切换**安静、均衡、性能**三种电源模式。
 - 切换后重新读取硬件状态，确认模式是否生效。
-- 查看实测风扇 RPM 和受支持设备的原生 CPU Package 温度，以及系统内存、磁盘使用情况。
+- 查看实测风扇 RPM 和 ACPI 热区温度，以及系统内存、磁盘使用情况。
 - 图形界面和硬件测试工具共用同一套 Rust 硬件控制代码。
 
-访问硬件需要管理员权限和兼容的来酷 WMI 接口。当前源码还提供可选登录启动、托盘快捷模式与单实例、关闭到托盘设置，以及带独立守护恢复的自动/最大/35–100% 风扇目标控制。温度与手动风扇目前限定本机已验证的 8745H 单风扇路径，并依赖已加载的 WinRing0。固件不能读回实际占空比/控制模式，界面区分请求目标和实测 RPM；见[功能说明](docs/features.md)。电源模式切换已在一台来酷设备上完成硬件验证。
+访问硬件需要管理员权限和兼容的来酷 WMI 接口。提供可选登录启动、托盘快捷模式与单实例，以及自动/最大风量控制。热区温度未经 CPU 保护验证，降低风量的手动目标暂时禁用。应用不包含或访问 WinRing0，不需要另装传感器驱动、.NET 或 VC++ 运行库。固件仅报告实测 RPM，不能读回占空比或控制模式；见[功能说明](docs/features.md)。
 
 ## 下载
 
-在 [v0.0.2 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2) 下载 Windows x64 版本：
+在 [v0.0.3 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) 下载 Windows x64 版本：
 
-- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
-- `lecoo-rust-powercontrol-v0.0.2-windows-x64.zip.sha256`：压缩包校验值。
+- `lecoo-rust-powercontrol-v0.0.3-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
+- `lecoo-rust-powercontrol-v0.0.3-windows-x64-setup.exe`：安装版，包含卸载程序。
 
-以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.2)。
+开机自动运行可在应用设置中启用“登录后启动（进入托盘）”，默认关闭。
+
+以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3)。
 
 ## 从源码构建
 
@@ -47,7 +49,7 @@ cargo fetch --locked
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 ```
 
-脚本会构建图形应用和硬件测试工具，将文件复制到 `dist/` 并生成 SHA-256 校验值。GitHub Actions 使用锁定的依赖，从版本标签构建发布程序。
+打包还需要 Inno Setup 6。脚本在 `dist/` 生成 ZIP 与安装包；GitHub Actions 对每个版本标签生成两种格式，并检查安装及卸载。原生 C 运行库已静态链接。
 
 ## 自动硬件测试
 
@@ -63,7 +65,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 
 ## 后续计划
 
-后续功能规划见[路线图](ROADMAP.md)。登录启动、托盘与风扇控制已在当前源码实现；UI 重设计和动画仍待实现。这些功能包含在 v0.0.2 发布包中。
+后续功能规划见[路线图](ROADMAP.md)。登录启动、托盘、原生界面与自动/最大风量已实现；动画暂缓以保持轻量。
 
 ## 项目结构
 
@@ -77,6 +79,3 @@ docs/      环境准备、测试和硬件接口文档
 ## 许可证
 
 本项目未授予开源许可证。代码版权归 BlackSquarre 所有；仓库公开可见不代表允许转载或复用代码。
-
-
-当前紧凑 C 版源码已接入 CPU Package 功率、中英文即时切换和关于窗口；语言选择在型号右侧齿轮的设置中。见[中英文界面说明](docs/localization.md)。这些改动尚未替换已发布的 v0.0.2 ZIP。

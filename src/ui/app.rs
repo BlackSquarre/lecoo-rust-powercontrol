@@ -468,6 +468,10 @@ impl ControlCenterApp {
         self.render();
     }
     fn submit_manual(&mut self, percent: u8) {
+        if percent != 100 {
+            self.last_error = Some("ACPI 热区尚未验证为 CPU 保护温度，手动风扇目标暂不可用".to_owned());
+            return;
+        }
         match FanTarget::percent(percent) {
             Ok(target) => {
                 if !self.fan_started
@@ -571,17 +575,10 @@ impl ControlCenterApp {
             return;
         };
         ui.text(
-            native::CPU,
+            native::THERMAL_ZONE,
             snapshot
-                .cpu_temp
+                .thermal_zone_temp
                 .map(|v| format!("{v:.1} °C"))
-                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
-        );
-        ui.text(
-            native::PACKAGE_POWER,
-            snapshot
-                .cpu_package_power
-                .map(|v| format!("{v:.1} W"))
                 .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
         );
         ui.text(
@@ -624,10 +621,10 @@ impl ControlCenterApp {
         ui.check(native::MAXIMUM, self.fan_target == 100);
         ui.check(native::MANUAL, (35..100).contains(&self.fan_target));
         let adjustable = !self.fan_started || self.fan_ready;
-        ui.enable(native::MANUAL, adjustable);
+        ui.enable(native::MANUAL, false);
         ui.enable(native::MAXIMUM, adjustable);
-        ui.enable(native::TARGET, adjustable);
-        ui.text(native::PERCENT, format!("{}%", self.manual_percent));
+        ui.enable(native::TARGET, false);
+        ui.text(native::PERCENT, "—".to_owned());
         ui.fan_state(self.fan_target, self.fan_ready);
         if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
             dialog.check(
@@ -701,7 +698,7 @@ impl ControlCenterApp {
         }
         if self.smoke_phase == 2 && seconds >= 5 {
             self.smoke_phase = 3;
-            self.command(native::MANUAL);
+            self.command(native::MAXIMUM);
         }
         if self.smoke_phase == 3 && seconds >= 6 && self.fan_ready {
             self.smoke_phase = 4;

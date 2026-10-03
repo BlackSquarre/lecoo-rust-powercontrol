@@ -42,7 +42,9 @@
 `DllCallMethod.dll` 导出：EyeModeNormal、GETNightMode、GETProtectEyeMode、NightModeNormal、NormalMode、SayHello。
 源码将部分函数用于护眼/夜间模式；函数签名和写入效果未在本机调用验证。
 ImagesShowService 使用 LocalSystem 自动运行；内部 IPC 未解析。
-WinRing0_1_2_0 是现有硬件监控驱动。本机二进制调查已确认官方 AMD 温度经 OpenHardwareMonitor 访问它，风扇设置则走 WMI。现已实现并在 Ryzen 7 8745H 上验证独立 Rust 温度采样原型，详见[驱动调查及采样验证](native-sensor-research.md)。原生采样复用已加载的驱动，未实现新内核驱动；现已接入带独立守护进程的 WMI 风扇控制，边界见[功能说明](../../features.md)。
+WinRing0_1_2_0 是官方软件的现有监控驱动；本应用 v0.0.3 已移除对它的访问，也不附带、安装或卸载它。此前独立 Rust 采样结果保留在[历史调查](native-sensor-research.md)。
+
+当前显示温度来自 `root\WMI:MSAcpi_ThermalZoneTemperature`，只选择已观察到的 `ACPI\ThermalZone\TZ01_0`。`CurrentTemperature` 按 0.1 K 转为摄氏：`raw / 10 - 273.15`；0、异常范围、访问失败或缺少该实例均显示不可用。本机 raw=3112 对应 38.05°C，未验证该热区与 CPU 封装温度的对应关系。电源模式和风扇控制仍使用独立编写的 PowerSwitchInterface WMI 调用。
 
 ## 建议的实现顺序
 

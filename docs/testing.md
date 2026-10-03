@@ -1,3 +1,15 @@
+# v0.0.3 当前验证
+
+- `cargo test --lib --locked`：纯状态机、输入及温度换算测试，不调用实际硬件写入。Windows 构建带管理员清单，测试可执行文件需要提权启动。
+- `target/release/hardware_test.exe --thermal-zone`：生产 ACPI 热区读取；独立 CIM 枚举核对原始值，不修改硬件。
+- `scripts/test-native-ui.ps1`：热区标签、中英文、版本、四格界面、禁用手动目标、最大风量、窗口与托盘检查；会临时改变模式、风扇、偏好与主题。
+- `scripts/test-features.ps1`：登录任务、单实例、最大风量守护、低目标拒绝、心跳及 EOF 恢复；会临时修改启动任务和风扇。
+- 发布工作流检查安装包静默安装后的文件与原构建相同，并验证卸载；不在构建机运行硬件控制。
+
+此前的 `sensor_probe`、`scripts/test-sensors.ps1` 与 WinRing0 代码已删除。以下为旧版本验证记录，不能视为 v0.0.3 的测试结果。真实登录触发、热区负载响应及 CPU 保护对应关系尚未验证。
+
+---
+
 # 自动硬件测试
 
 入口：`scripts/test-power-modes.ps1`。测试程序 `src/bin/hardware_test.rs` 和 GUI 共用 `src/lib.rs` 中的生产硬件控制代码。

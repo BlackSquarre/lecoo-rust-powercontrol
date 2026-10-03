@@ -61,7 +61,7 @@ pub fn worker() -> Result<()> {
     // Opening a session establishes firmware automatic control; no manual preference is persisted.
     let receipt = control.restore_auto()?;
     emit(format!("AUTO {} {}", receipt.status, receipt.rpm));
-    match control.sample() {
+    match control.measured_rpm() {
         Ok(_) => emit("READY"),
         Err(error) => emit(format!("UNAVAILABLE {error:#}")),
     }
@@ -127,11 +127,15 @@ pub fn worker() -> Result<()> {
             if let Err(error) = control.guard(heartbeat.elapsed()) {
                 emit(format!("RECOVERY {} {error:#}", control.target().encoded()));
             }
-            match control.sample() {
-                Ok((temp, rpm)) => emit(format!(
-                    "DATA {temp:.3} {rpm} {}",
-                    control.target().encoded()
-                )),
+            match control.measured_rpm() {
+                Ok(rpm) => {
+                    let temp = control
+                        .sample()
+                        .ok()
+                        .map(|(temp, _)| format!("{temp:.3}"))
+                        .unwrap_or_else(|| "NA".to_owned());
+                    emit(format!("DATA {temp} {rpm} {}", control.target().encoded()));
+                }
                 Err(error) => emit(format!("UNAVAILABLE {error:#}")),
             }
         }

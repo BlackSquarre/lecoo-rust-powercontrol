@@ -1,16 +1,16 @@
 # Windows UI and memory usage
 
-The current source replaces the eframe/OpenGL UI with Win32 windows and controls. This change is not yet in the published v0.0.2 package.
+The current source replaces the eframe/OpenGL UI with Win32 windows and controls. This interface is included in v0.0.3.
 
-The layout follows the approved compact C revision, at 400 × 520 logical pixels by default. A two-by-two grid shows CPU temperature, CPU package power, fan RPM, and combined memory/disk usage. Power and fan controls sit underneath; quiet is green, balanced blue, performance red. The device footer contains the sole Settings gear. The endpoint/caption row and request/firmware/reconnect/version/connection information have been removed from the main dashboard. Settings opens an owned native window with sign-in startup, close behavior, language and About. Errors appear only when needed.
+The layout follows the approved compact C revision, at 400 × 520 logical pixels by default. A two-by-two grid shows ACPI thermal-zone temperature, fan RPM, memory usage and disk usage. Power and fan controls sit underneath; quiet is green, balanced blue, performance red. The device footer contains the sole Settings gear. The endpoint/caption row and request/firmware/reconnect/version/connection information have been removed from the main dashboard. Settings opens an owned native window with sign-in startup, close behavior, language and About. Errors appear only when needed.
 
-CPU package watts are sampled through the existing WinRing0 channel using AMD package energy telemetry. The first sample establishes a baseline; subsequent valid intervals produce average watts. Failure or an invalid interval displays Unavailable and refreshes the baseline, preventing a stale value after suspend/resume. This is not configured TDP or whole-system wall power; see [package power](package-power.md).
+Temperature is read through Windows ACPI thermal-zone WMI. Package power and all WinRing0 access have been removed. An unavailable reading is displayed as Unavailable; the zone has not been validated as a CPU package sensor.
 
 The language menu offers System default, 简体中文 and English. The default follows the Windows UI language (Chinese UI uses Simplified Chinese; other UI languages use English). Explicit language choices persist beside the close preference and update the dashboard, settings, About, close prompt and tray menu immediately. Theme remains independent of language and follows the Windows app light/dark setting. See [terminology and localization](localization.md).
 
 About shows the application icon, name, version, author, current local-calendar copyright year, Bilibili and project-website links, and third-party notices. The year updates while the window is open. Links open in the default browser; license text opens in a native read-only scrolling EDIT control. No embedded browser, custom graphics context or bitmap back buffer is allocated.
 
-Fan changes commit when the slider is released. Keyboard/step changes are coalesced for 350 ms before submission; dragging only updates the displayed value. Existing range checks, temperature checks and independent worker recovery remain active. A fan worker is started only when cooling controls are used, so simply opening the dashboard does not create another process.
+Auto and Maximum remain available. The Manual option and slider are disabled pending validation of a sensor for CPU protection. Worker heartbeat and RPM failure recovery remain active. A worker starts only when cooling controls are used.
 
 Closing the main window initially opens a choice dialog: minimize to the notification area or exit, with a Remember checkbox. Choosing without Remember applies only once. Remembered choices are saved under `%LOCALAPPDATA%\LecooRustPowerControl\preferences.txt`. Reset the choice in Settings to show the prompt again. Cancelling the dialog keeps the window open. The dialog uses the ongoing controller message loop so manual cooling heartbeats continue while it is open.
 
@@ -24,12 +24,12 @@ While hidden with a manual fan session, the main process and worker together had
 
 `scripts/test-native-ui.ps1` exercises the release executable on the compatible machine. It changes power modes, temporary app preferences and the Windows app theme, and restores all three after testing. Do not run it against a user-owned running application.
 
-It verifies independent power-mode readback, compact layout, live package watts, language persistence and About, light/dark client and title-bar colors, deferred slider writes, automatic submission, close-dialog heartbeat continuity, remembered choices, cancellation, tray window destruction/recreation and repeated GDI/USER handle counts. Current compact UI screenshots and JSON are stored in ignored `logs/compact-ui/`; prior A-layout evidence remains in `logs/native-migration/`. `scripts/test-features.ps1` additionally checks startup registration/action, single-instance wakeup, fan ranges, timeout and EOF recovery.
+It verifies independent power-mode readback, compact layout, thermal-zone readings, language persistence and About, light/dark client and title-bar colors, disabled manual controls, maximum fan requests, close-dialog heartbeat continuity, remembered choices, cancellation, tray window destruction/recreation and repeated GDI/USER handle counts. Current compact UI screenshots and JSON are stored in ignored `logs/compact-ui/`; prior A-layout evidence remains in `logs/native-migration/`. `scripts/test-features.ps1` additionally checks startup registration/action, single-instance wakeup, fan ranges, timeout and EOF recovery.
 
 The original sketches are in [design/native-ui](design/native-ui/README.md); actual UI copy and placement follow subsequent user decisions.
 
 
-## Compact C validation (2026-10-04)
+## Historical compact C validation before v0.0.3 (2026-10-04)
 
 Final local Release SHA256: `23BA69C5394CFBD3255287115FD2DDC6972CFCA86EFEABCB8081399D5088662D`; executable size 641,536 bytes. Eighteen unit tests passed. `logs/compact-ui/native-ui-final.json` and `features-final.json` both report Passed=true and Restored=true with this same binary hash.
 

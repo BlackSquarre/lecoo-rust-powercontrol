@@ -51,7 +51,7 @@ impl SystemMonitor {
         };
 
         // 获取硬件控制数据
-        if let Ok(mut hw) = self.hw_control.lock() {
+        if let Ok(hw) = self.hw_control.lock() {
             match hw.get_power_mode() {
                 Ok(mode) => snapshot.power_mode = Some(mode),
                 Err(error) => {
@@ -59,8 +59,7 @@ impl SystemMonitor {
                 }
             }
             snapshot.fan_speed = hw.get_fan_speed(1).ok().flatten();
-            snapshot.cpu_temp = hw.get_cpu_temperature().ok().flatten();
-            snapshot.cpu_package_power = hw.get_cpu_package_power().ok().flatten();
+            snapshot.thermal_zone_temp = hw.get_thermal_zone_temperature().ok().flatten();
         }
 
         // 内存信息

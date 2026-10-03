@@ -2,13 +2,12 @@ name: Windows release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       ref:
-        description: Tag or branch to build and package
-        required: false
+        description: Version tag to build and publish
+        required: true
         type: string
 
 permissions:
@@ -26,32 +25,45 @@ jobs:
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Check unit tests
+        run: cargo test --lib --locked
+
       - name: Build release binaries
         run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test
 
-      - name: Package and checksum
+      - name: Package ZIP and installer
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.ref || github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG
+          if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a version tag: $version" }
+          $cargoVersion = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "([0-9.]+)"').Matches.Groups[1].Value
+          if ($version -ne "v$cargoVersion") { throw 'Tag and Cargo version differ' }
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (!(Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          ./scripts/build-release.ps1 -SkipBuild
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Check installer installation and removal
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = '${{ inputs.ref }}'
-          if ([string]::IsNullOrWhiteSpace($version)) { $version = '${{ github.ref_name }}' }
-          if ($version -match '^refs/tags/(v\d+\.\d+\.\d+)$') { $version = $Matches[1] }
-          if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a semantic version tag, got $version" }
-          $packageName = "lecoo-rust-powercontrol-$version-windows-x64"
-          $stage = Join-Path $env:RUNNER_TEMP $packageName
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item target/release/lecoo-control-center.exe, target/release/hardware_test.exe -Destination $stage
-          $checksums = Get-ChildItem -LiteralPath $stage -File | ForEach-Object {
-            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          $base = "lecoo-rust-powercontrol-$env:PACKAGE_VERSION-windows-x64"
+          $setup = Join-Path $PWD "dist/$base-setup.exe"
+          $installDir = Join-Path $env:RUNNER_TEMP 'LecooInstallerCheck'
+          $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS=',"/DIR=`"$installDir`"")
+          $process = Start-Process -FilePath $setup -ArgumentList $args -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          foreach ($file in @('lecoo-control-center.exe','hardware_test.exe')) {
+            if ((Get-FileHash "target/release/$file").Hash -ne (Get-FileHash (Join-Path $installDir $file)).Hash) { throw "Installed file differs: $file" }
           }
-          $checksums | Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Encoding ASCII
-          $archive = Join-Path $env:RUNNER_TEMP "$packageName.zip"
-          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archive -CompressionLevel Optimal
-          $zipHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$zipHash  $([IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding ASCII
-          "PACKAGE_ARCHIVE=$archive" >> $env:GITHUB_ENV
-          "PACKAGE_CHECKSUM=$archive.sha256" >> $env:GITHUB_ENV
-          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+          $process = Start-Process -FilePath (Join-Path $installDir 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0 -or (Test-Path (Join-Path $installDir 'lecoo-control-center.exe'))) { throw 'Installer removal failed' }
 
       - name: Publish GitHub release
         env:
@@ -59,14 +71,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $base = "dist/lecoo-rust-powercontrol-$env:PACKAGE_VERSION-windows-x64"
+          $assets = @("$base.zip", "$base.zip.sha256", "$base-setup.exe", "$base-setup.exe.sha256")
+          foreach ($asset in $assets) { if (!(Test-Path -LiteralPath $asset)) { throw "Missing release asset: $asset" } }
           gh release view "$env:PACKAGE_VERSION" *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --clobber
+            gh release upload "$env:PACKAGE_VERSION" @assets --clobber
           } else {
-            $notes = "docs/releases/$env:PACKAGE_VERSION.md"
-            if (Test-Path -LiteralPath $notes) {
-              gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --notes-file "$notes"
-            } else {
-              gh release create "$env:PACKAGE_VERSION" "$env:PACKAGE_ARCHIVE" "$env:PACKAGE_CHECKSUM" --verify-tag --title "$env:PACKAGE_VERSION — Lecoo Rust PowerControl" --generate-notes
-            }
+            gh release create "$env:PACKAGE_VERSION" @assets --verify-tag --title "Lecoo Rust PowerControl $env:PACKAGE_VERSION" --notes-file "docs/releases/$env:PACKAGE_VERSION.md"
           }
+          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }

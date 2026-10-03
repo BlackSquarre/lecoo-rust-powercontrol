@@ -16,12 +16,8 @@ pub trait HardwareControl {
     /// temp_type: 0 或 1
     fn get_hw_temp(&self, temp_type: u8) -> Result<Option<u32>>;
 
-    /// CPU package temperature in real Celsius, without the vendor GUI's scaling.
-    fn get_cpu_temperature(&self) -> Result<Option<f32>> {
-        Ok(None)
-    }
-    /// Average CPU package power over the preceding sampling interval, in watts.
-    fn get_cpu_package_power(&mut self) -> Result<Option<f64>> {
+    /// Temperature of the observed ACPI thermal zone, in Celsius.
+    fn get_thermal_zone_temperature(&self) -> Result<Option<f32>> {
         Ok(None)
     }
 
