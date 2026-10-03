@@ -3,20 +3,26 @@
 use lecoo_control_center::{core, platform};
 mod ui;
 
-use eframe::egui;
 use platform::HardwareControl;
 
 #[cfg(target_os = "windows")]
 use platform::windows::{ComGuard, WindowsHardwareControl};
 
 fn main() {
+    ui::initialize_language();
     if let Err(error) = run() {
-        platform::windows::desktop::show_error(&format!("应用启动失败: {error}"));
+        platform::windows::desktop::show_error(&format!(
+            "{}: {error}",
+            lecoo_control_center::localization::text(
+                "应用启动失败",
+                "Unable to start the application"
+            )
+        ));
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), eframe::Error> {
+fn run() -> anyhow::Result<()> {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     if arguments.first().map(String::as_str) == Some("--fan-worker") {
         if let Err(error) = platform::windows::fan_session::worker() {
@@ -48,7 +54,13 @@ fn run() -> Result<(), eframe::Error> {
         Ok(Some(instance)) => instance,
         Ok(None) => return Ok(()),
         Err(error) => {
-            platform::windows::desktop::show_error(&format!("单实例初始化失败: {error:#}"));
+            platform::windows::desktop::show_error(&format!(
+                "{}: {error:#}",
+                lecoo_control_center::localization::text(
+                    "单实例初始化失败",
+                    "Unable to initialize the application instance"
+                )
+            ));
             return Ok(());
         }
     };
@@ -60,13 +72,11 @@ fn run() -> Result<(), eframe::Error> {
         .map(std::path::PathBuf::from);
     // 初始化 COM（Windows 平台）
     #[cfg(target_os = "windows")]
-    let _com = ComGuard::new().map_err(|error| eframe::Error::AppCreation(error.into()))?;
+    let _com = ComGuard::new()?;
 
     // 创建硬件控制实例
     #[cfg(target_os = "windows")]
-    let hw_control: Box<dyn HardwareControl> = Box::new(
-        WindowsHardwareControl::new().map_err(|error| eframe::Error::AppCreation(error.into()))?,
-    );
+    let hw_control: Box<dyn HardwareControl> = Box::new(WindowsHardwareControl::new()?);
 
     #[cfg(not(target_os = "windows"))]
     {
@@ -74,31 +84,5 @@ fn run() -> Result<(), eframe::Error> {
         std::process::exit(1);
     }
 
-    // 启动 GUI
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 600.0])
-            .with_min_inner_size([800.0, 500.0])
-            .with_icon(egui::IconData {
-                rgba: platform::windows::desktop::icon_rgba(),
-                width: 32,
-                height: 32,
-            })
-            .with_title(concat!("Lecoo Rust PowerControl v", env!("CARGO_PKG_VERSION"))),
-        ..Default::default()
-    };
-
-    eframe::run_native(
-        "Lecoo Rust PowerControl",
-        options,
-        Box::new(move |cc| {
-            Ok(Box::new(ui::ControlCenterApp::new(
-                cc,
-                hw_control,
-                instance,
-                minimized,
-                smoke_report,
-            )?))
-        }),
-    )
+    ui::ControlCenterApp::run(hw_control, instance, minimized, smoke_report)
 }

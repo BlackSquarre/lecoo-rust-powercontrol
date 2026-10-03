@@ -1,0 +1,16 @@
+# C 版收窄效果图
+
+使用内置 GPT Image，以 revision-2/c-compact-vertical.png 为编辑输入。设计提案，非运行界面截图。
+
+窗口在“性能”右侧按对称留白收边，选中态表达当前模式，移除重复的当前模式文字。滑条下方端点标签整行删除，当前百分比留在滑条右侧。
+
+```text
+Use case: ui-mockup / precise UI revision. Edit the provided C-layout LIGHT THEME Windows utility design mockup into ONE refined narrower version. Reference is the exact edit target. Preserve its restrained light native Windows look, Chinese labels, green/blue/red power-mode colors, two-column status grid, stacked power/fan sections, gear-only settings access, and blue manual fan slider. Entire window visible, straight-on screenshot, small neutral outside margin, no presentation captions or perspective.
+
+Two requested changes are essential:
+1. Make the WHOLE WINDOW substantially narrower by reducing the right-hand empty area. The power radio row should consist ONLY of "安静" (green, unselected), "均衡" (blue, unselected), "性能" (red, selected). The panel should END just after the "性能" label, with the SAME inner padding on the right as before the first radio on the left. DELETE the redundant "当前：性能模式" text to achieve this fit; the selected red radio already indicates current mode. Do not move that text to another line or introduce it elsewhere. Center/balance these three options across the narrow panel. Apply the same compact window width to every card and section. Conceptual client width around 370–400 logical pixels, tall compact utility rather than broad dashboard. Keep moderate readable font sizes and consistent 16px padding; do not just scale the entire reference down. Reflow and compact the status tiles and device footer to this width.
+2. Under the fan slider, DELETE BOTH endpoint labels "35%" and "100%" AND DELETE THE ENTIRE ROW they occupied, INCLUDING its vertical space. No new captions, instructions or explanatory line below the slider. Keep "50%" once, at the RIGHT of the slider on the SAME ROW. Fan card ends soon after that row with normal bottom padding.
+
+Exact content remaining: top title "Lecoo Rust PowerControl" with small teal power icon and native minimize/maximize/close buttons; one upper-right small gear button placed above the grid, not inside a value tile. Two top tiles "CPU 温度" "41.0 °C" and "风扇转速" "1541 RPM". Next two tiles "内存" "81% · 7.1/8.8 GiB" and "磁盘" "40% · 192/476 GiB", with slim blue native progress bars. Two-column grid remains legible within narrower width using slightly smaller value type. Next "电源模式" section with the three specified native radios in one row. Next "风扇控制" section with "自动" "手动" "最大" native radio options in one row, manual selected blue. Below, native horizontal blue slider with thumb at approximately 23% of travel (selected value 50 on an actual range 35–100), "50%" immediately to right. Device footer can use TWO neat short muted lines "Lecoo MINI PRO-AHP" and "AMD Ryzen 7 8745H" to avoid widening the window.
+Avoid: current-mode explanatory text, endpoint labels, slider caption, Apply/refresh/reconnect/exit/tray buttons, startup settings rows on dashboard, body version/connection/status/safety notes, unrelated new features, giant empty right-hand padding, tiny unreadable type, glass/blur/glow/shadow decoration. This is one mockup, not running software. Preserve Chinese text accuracy.
+```

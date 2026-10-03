@@ -1,6 +1,9 @@
+use super::{
+    native::{self, ControllerWindow, NativeWindow},
+    preferences::{self, CloseBehavior},
+};
 use crate::core::cooling::{CoolingIo, FanTarget};
 use crate::core::{PowerMode, SystemMonitor};
-use crate::platform::windows::gui_timer::GuiTimer;
 use crate::platform::windows::{
     desktop::{show_error, Action, Desktop},
     fan_session::FanClient,
@@ -9,417 +12,722 @@ use crate::platform::windows::{
     WindowsHardwareControl,
 };
 use crate::platform::HardwareControl;
-use crate::ui::theme::{apply_lecoo_theme, LecooColors};
-use crate::ui::widgets::{circular_gauge, disk_gauge, memory_gauge, FanGauge};
-use eframe::egui;
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::{cell::RefCell, rc::Rc};
+use anyhow::Result;
+use lecoo_control_center::localization::{self, text as tr, Language};
 use std::{
     path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver},
-        Arc,
-    },
+    sync::mpsc::{self, Receiver},
     time::{Duration, Instant},
 };
 use windows::Win32::{
     Foundation::{HWND, LPARAM, WPARAM},
-    UI::WindowsAndMessaging::{
-        IsWindowVisible, PostMessageW, SetForegroundWindow, ShowWindow, SW_HIDE, SW_RESTORE,
-        SW_SHOW, WM_CLOSE,
+    UI::{
+        Controls::{TB_ENDTRACK, TB_THUMBPOSITION, TB_THUMBTRACK},
+        WindowsAndMessaging::*,
     },
 };
 
-pub struct NativeApp {
-    _timer: GuiTimer,
-    inner: Rc<RefCell<ControlCenterApp>>,
-}
-impl eframe::App for NativeApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if let Ok(mut app) = self.inner.try_borrow_mut() {
-            app.update(ctx, frame);
-        } else {
-            ctx.request_repaint();
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Page {
-    Mode,     // 模式设置
-    Fan,      // 风扇控制
-    Settings, // 功能设定
-    Info,     // 常规信息
-}
-
 pub struct ControlCenterApp {
     monitor: SystemMonitor,
-    current_page: Page,
-    fan_gauge: FanGauge,
-    colors: LecooColors,
     last_error: Option<String>,
     desktop: Desktop,
     instance: Instance,
-    close_to_tray: bool,
-    hidden: bool,
+    close_behavior: CloseBehavior,
     exiting: bool,
-    initial_minimized: bool,
     startup_status: Option<StartupStatus>,
     startup_pending: Option<Receiver<anyhow::Result<StartupStatus>>>,
+    startup_checked: Instant,
+    theme_checked: Instant,
+    resolved_english: bool,
+    slider_pending: Option<(Instant, u8)>,
+    pending_fan_target: Option<FanTarget>,
     fan: Option<FanClient>,
     fan_ready: bool,
     fan_started: bool,
     fan_target: u8,
     manual_percent: u8,
     fan_notice: String,
-    ticker_stop: Arc<AtomicBool>,
     smoke_report: Option<PathBuf>,
     smoke_started: Instant,
     smoke_phase: u8,
     open_requests: u32,
-    window: HWND,
+    windows_created: u32,
+    windows_destroyed: u32,
+    window: Option<NativeWindow>,
+    dialog: Option<NativeWindow>,
+    about: Option<NativeWindow>,
+    notices: Option<NativeWindow>,
 }
-
 impl ControlCenterApp {
-    pub fn new(
-        _cc: &eframe::CreationContext<'_>,
-        hw_control: Box<dyn HardwareControl>,
+    pub fn run(
+        hw: Box<dyn HardwareControl>,
         instance: Instance,
         minimized: bool,
         smoke_report: Option<PathBuf>,
-    ) -> anyhow::Result<NativeApp> {
-        apply_lecoo_theme(&_cc.egui_ctx);
-        let desktop = Desktop::new(&_cc.egui_ctx)?;
-        let window = match _cc.window_handle()?.as_raw() {
-            RawWindowHandle::Win32(handle) => HWND(handle.hwnd.get() as *mut _),
-            _ => anyhow::bail!("需要 Windows 主窗口"),
-        };
-        let ticker_stop = Arc::new(AtomicBool::new(false));
-        let stop = ticker_stop.clone();
-        let ctx = _cc.egui_ctx.clone();
-        std::thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
-                ctx.request_repaint();
-                std::thread::sleep(Duration::from_millis(500));
-            }
-        });
+    ) -> Result<()> {
+        let controller = ControllerWindow::new()?;
         let mut app = Self {
-            monitor: SystemMonitor::new(hw_control),
-            current_page: Page::Mode,
-            fan_gauge: FanGauge::new(),
-            colors: LecooColors::default(),
+            monitor: SystemMonitor::new(hw),
             last_error: None,
-            desktop,
+            desktop: Desktop::new()?,
             instance,
-            close_to_tray: super::preferences::close_to_tray(),
-            hidden: false,
+            close_behavior: preferences::load(),
             exiting: false,
-            initial_minimized: minimized,
             startup_status: None,
             startup_pending: None,
+            startup_checked: Instant::now(),
+            theme_checked: Instant::now(),
+            resolved_english: localization::is_english(),
+            slider_pending: None,
+            pending_fan_target: None,
             fan: None,
             fan_ready: false,
             fan_started: false,
             fan_target: 101,
             manual_percent: 50,
-            fan_notice: "尚未启动控制会话".to_owned(),
-            ticker_stop,
+            fan_notice: String::new(),
             smoke_report,
             smoke_started: Instant::now(),
             smoke_phase: 0,
             open_requests: 0,
-            window,
+            windows_created: 0,
+            windows_destroyed: 0,
+            window: None,
+            dialog: None,
+            about: None,
+            notices: None,
         };
         app.startup_operation("status");
-        let inner = Rc::new(RefCell::new(app));
-        let weak = Rc::downgrade(&inner);
-        let ctx = _cc.egui_ctx.clone();
-        let timer = GuiTimer::new(move || {
-            if let Some(inner) = weak.upgrade() {
-                if let Ok(mut app) = inner.try_borrow_mut() {
-                    app.background_tick(&ctx);
-                }
-            }
-        })?;
-        Ok(NativeApp {
-            _timer: timer,
-            inner,
-        })
-    }
-
-    fn render_sidebar(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-
-            // Logo 占位
-            ui.heading(
-                egui::RichText::new("Lecoo")
-                    .size(24.0)
-                    .color(self.colors.accent),
-            );
-
-            ui.add_space(40.0);
-
-            // 导航按钮
-            self.render_nav_button(ui, "模式设置", "🎛", Page::Mode);
-            self.render_nav_button(ui, "风扇控制", "🌀", Page::Fan);
-            self.render_nav_button(ui, "功能设定", "⚙", Page::Settings);
-            self.render_nav_button(ui, "常规信息", "📋", Page::Info);
-        });
-    }
-
-    fn render_nav_button(&mut self, ui: &mut egui::Ui, label: &str, icon: &str, page: Page) {
-        let is_selected = self.current_page == page;
-
-        let button =
-            egui::Button::new(egui::RichText::new(format!("{} {}", icon, label)).size(16.0))
-                .min_size(egui::vec2(120.0, 40.0))
-                .selected(is_selected);
-
-        if ui.add(button).clicked() {
-            self.current_page = page;
+        if !minimized || !app.desktop.is_available() {
+            app.open()?;
         }
-
-        ui.add_space(8.0);
-    }
-
-    fn render_status_panel(&mut self, ui: &mut egui::Ui, snapshot: &crate::core::SystemSnapshot) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-
-            // CPU 温度
-            if let Some(temp) = snapshot.cpu_temp {
-                circular_gauge(ui, "CPU温度", temp as f32, 100.0, "°C", self.colors.primary);
-            } else {
-                ui.heading("CPU温度");
-                ui.label(egui::RichText::new("不可用").color(Color32::GRAY));
-            }
-
-            ui.add_space(30.0);
-
-            // 磁盘使用率
-            let disk_used_gb = snapshot.disk_used as f32 / 1_073_741_824.0;
-            let disk_total_gb = snapshot.disk_total as f32 / 1_073_741_824.0;
-            disk_gauge(ui, disk_used_gb, disk_total_gb, self.colors.primary);
-
-            ui.add_space(30.0);
-
-            // 内存使用率
-            let mem_used_gb = snapshot.mem_used as f32 / 1_073_741_824.0;
-            let mem_total_gb = snapshot.mem_total as f32 / 1_073_741_824.0;
-            memory_gauge(ui, mem_used_gb, mem_total_gb, self.colors.primary);
-        });
-    }
-
-    fn render_mode_page(&mut self, ui: &mut egui::Ui, snapshot: &crate::core::SystemSnapshot) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(20.0);
-
-            // 性能模式按钮
-            ui.horizontal(|ui| {
-                ui.add_space(50.0);
-
-                let modes = [
-                    (PowerMode::Quiet, "安静模式", self.colors.mode_quiet),
-                    (PowerMode::Balance, "均衡模式", self.colors.mode_balance),
-                    (
-                        PowerMode::Performance,
-                        "性能模式",
-                        self.colors.mode_performance,
-                    ),
-                ];
-
-                for (mode, label, color) in modes {
-                    let is_current = snapshot.power_mode == Some(mode);
-
-                    let button = egui::Button::new(egui::RichText::new(label).size(18.0).color(
-                        if is_current {
-                            Color32::WHITE
-                        } else {
-                            Color32::from_gray(180)
-                        },
-                    ))
-                    .min_size(egui::vec2(150.0, 50.0))
-                    .fill(if is_current {
-                        color
-                    } else {
-                        self.colors.bg_card
-                    });
-
-                    if ui.add(button).clicked() {
-                        self.set_power_mode(mode);
+        app.tick();
+        unsafe {
+            let mut message = MSG::default();
+            while !app.exiting {
+                let result = GetMessageW(&mut message, None, 0, 0).0;
+                if result == -1 {
+                    return Err(windows::core::Error::from_win32().into());
+                }
+                if result == 0 {
+                    break;
+                }
+                if message.hwnd == controller.0 {
+                    match message.message {
+                        WM_TIMER => app.tick(),
+                        native::COMMAND => app.command((message.wParam.0 & 0xffff) as u16),
+                        native::CLOSE => app.close_request(HWND(message.wParam.0 as *mut _)),
+                        native::HIDE => app.hide(),
+                        native::EXIT => app.exiting = true,
+                        native::LAYOUT => {
+                            if let Some(ui) = [&app.window, &app.dialog, &app.about, &app.notices]
+                                .into_iter()
+                                .flatten()
+                                .filter(|ui| ui.hwnd.0 as usize == message.wParam.0)
+                                .next()
+                            {
+                                ui.layout();
+                            }
+                        }
+                        native::DPI => {
+                            for ui in [&app.window, &app.dialog, &app.about, &app.notices]
+                                .into_iter()
+                                .flatten()
+                                .filter(|ui| ui.hwnd.0 as usize == message.wParam.0)
+                            {
+                                if let Err(error) = ui.update_font() {
+                                    app.last_error = Some(format!("{error:#}"));
+                                }
+                                ui.layout();
+                            }
+                        }
+                        native::THEME => app.refresh_theme(),
+                        native::SLIDER => app.slider(
+                            (message.wParam.0 & 0xffff) as u32,
+                            HWND(message.lParam.0 as *mut _),
+                        ),
+                        _ => {
+                            let _ = TranslateMessage(&message);
+                            DispatchMessageW(&message);
+                        }
+                    }
+                } else {
+                    let active = app
+                        .notices
+                        .as_ref()
+                        .or(app.about.as_ref())
+                        .or(app.dialog.as_ref())
+                        .or(app.window.as_ref());
+                    if !active.is_some_and(|ui| IsDialogMessageW(ui.hwnd, &message).as_bool()) {
+                        let _ = TranslateMessage(&message);
+                        DispatchMessageW(&message);
                     }
                 }
-            });
-
-            ui.add_space(40.0);
-
-            // 风扇转速仪表
-            if let Some(rpm) = snapshot.fan_speed {
-                self.fan_gauge.set_rpm(rpm);
-            } else {
-                self.fan_gauge.set_rpm(0);
             }
-            self.fan_gauge.render(ui);
-
-            // 错误提示
-            if let Some(error) = self
-                .last_error
-                .as_ref()
-                .or(snapshot.power_mode_error.as_ref())
-            {
-                ui.add_space(20.0);
-                ui.label(egui::RichText::new(error).color(Color32::from_rgb(255, 100, 100)));
-            }
-        });
+        }
+        app.stop_fan();
+        app.dialog.take();
+        app.window.take();
+        Ok(())
     }
-
-    fn render_fan_page(&mut self, ui: &mut egui::Ui, snapshot: &crate::core::SystemSnapshot) {
-        ui.vertical_centered(|ui| {
-            ui.add_space(40.0);
-
-            ui.heading("风扇控制页面");
-            ui.add_space(20.0);
-
-            if let Some(rpm) = snapshot.fan_speed {
-                self.fan_gauge.set_rpm(rpm);
-                self.fan_gauge.render(ui);
-            } else {
-                ui.label("风扇数据不可用");
+    fn open(&mut self) -> Result<()> {
+        if self.window.is_none() {
+            self.window = Some(NativeWindow::new(self.manual_percent)?);
+            self.windows_created += 1;
+        }
+        if let Some(ui) = &self.window {
+            ui.show();
+        }
+        if let Some(active) = self
+            .notices
+            .as_ref()
+            .or(self.about.as_ref())
+            .or(self.dialog.as_ref())
+        {
+            active.show();
+        }
+        self.startup_operation("status");
+        self.refresh_theme();
+        self.render();
+        Ok(())
+    }
+    fn hide(&mut self) {
+        if self.desktop.is_available() {
+            self.notices.take();
+            self.about.take();
+            self.dialog.take();
+            if self.window.take().is_some() {
+                self.windows_destroyed += 1;
             }
-
-            ui.add_space(20.0);
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(self.fan.is_some(), egui::Button::new("自动"))
-                    .clicked()
-                {
-                    self.request_fan(FanTarget::Auto);
+        } else {
+            self.last_error = Some("托盘图标不可用，保留主窗口".to_owned());
+            let _ = self.open();
+        }
+    }
+    fn close_request(&mut self, hwnd: HWND) {
+        if self.notices.as_ref().is_some_and(|ui| ui.hwnd == hwnd) {
+            self.notices.take();
+            return;
+        }
+        if self.about.as_ref().is_some_and(|ui| ui.hwnd == hwnd) {
+            self.notices.take();
+            self.about.take();
+            return;
+        }
+        if self
+            .dialog
+            .as_ref()
+            .is_some_and(|dialog| dialog.hwnd == hwnd)
+        {
+            self.cancel_dialog();
+            return;
+        }
+        if !self.window.as_ref().is_some_and(|ui| ui.hwnd == hwnd) {
+            return;
+        }
+        match self.close_behavior {
+            CloseBehavior::Tray => self.hide(),
+            CloseBehavior::Exit => self.exiting = true,
+            CloseBehavior::Ask => {
+                if self.dialog.is_none() {
+                    match NativeWindow::close_dialog(hwnd) {
+                        Ok(dialog) => self.dialog = Some(dialog),
+                        Err(error) => {
+                            self.last_error = Some(format!("关闭窗口对话框失败: {error:#}"))
+                        }
+                    }
                 }
-                if ui
-                    .add_enabled(self.fan_ready, egui::Button::new("最大"))
-                    .clicked()
-                {
-                    self.request_fan(FanTarget::Percent(100));
-                }
-            });
-            ui.add(egui::Slider::new(&mut self.manual_percent, 35..=100).text("目标 %"));
-            if ui
-                .add_enabled(self.fan_ready, egui::Button::new("应用手动目标"))
-                .clicked()
-            {
-                self.request_fan(FanTarget::Percent(self.manual_percent));
             }
-            ui.label(if self.fan_target == 101 {
-                "本会话请求：自动".to_owned()
-            } else {
-                format!("本会话请求：{}%", self.fan_target)
-            });
-            ui.label(&self.fan_notice);
-            ui.label("固件只返回 RPM，无法读回实际占空比或控制模式。");
-            ui.label("手动控制需要有效 CPU 温度；达到 85°C 或心跳中断会恢复自动。");
-            if !self.fan_ready && ui.button("重新连接").clicked() {
+        }
+    }
+    fn cancel_dialog(&mut self) {
+        if self.notices.take().is_some() {
+            return;
+        }
+        if self.about.take().is_some() {
+            return;
+        }
+        self.dialog.take();
+        if let Some(ui) = &self.window {
+            ui.show();
+        }
+    }
+    fn dialog_choice(&mut self, behavior: CloseBehavior) {
+        let remember = self
+            .dialog
+            .as_ref()
+            .is_some_and(|ui| ui.checked(native::REMEMBER));
+        if remember {
+            match preferences::save(behavior) {
+                Ok(()) => self.close_behavior = behavior,
+                Err(error) => self.last_error = Some(format!("保存关闭选择失败: {error:#}")),
+            }
+        }
+        self.dialog.take();
+        match behavior {
+            CloseBehavior::Tray => self.hide(),
+            CloseBehavior::Exit => self.exiting = true,
+            CloseBehavior::Ask => {}
+        }
+    }
+    fn command(&mut self, id: u16) {
+        match id {
+            native::ABOUT => {
+                if self.about.is_none() {
+                    if let Some(owner) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
+                        match NativeWindow::about_dialog(owner.hwnd, false) {
+                            Ok(ui) => self.about = Some(ui),
+                            Err(error) => self.last_error = Some(format!("{error:#}")),
+                        }
+                    }
+                }
+            }
+            native::NOTICES => {
+                if self.notices.is_none() {
+                    if let Some(owner) = &self.about {
+                        match NativeWindow::about_dialog(owner.hwnd, true) {
+                            Ok(ui) => self.notices = Some(ui),
+                            Err(error) => self.last_error = Some(format!("{error:#}")),
+                        }
+                    }
+                }
+            }
+            native::BILIBILI | native::PROJECT => {
+                let url = if id == native::BILIBILI {
+                    "https://space.bilibili.com/404899?spm_id_from=333.1365.0.0"
+                } else {
+                    "https://github.com/BlackSquarre/lecoo-rust-powercontrol"
+                };
+                unsafe {
+                    let owner = self.about.as_ref().map(|ui| ui.hwnd).unwrap_or_default();
+                    let result = windows::Win32::UI::Shell::ShellExecuteW(
+                        owner,
+                        windows::core::w!("open"),
+                        &windows::core::HSTRING::from(url),
+                        None,
+                        None,
+                        SW_SHOWNORMAL,
+                    );
+                    if result.0 as isize <= 32 {
+                        show_error(tr(
+                            "无法打开链接，请检查默认浏览器设置",
+                            "Unable to open the link. Check your default browser settings.",
+                        ));
+                    }
+                }
+            }
+            native::SETTINGS => {
+                if self.dialog.is_none() {
+                    if let Some(ui) = &self.window {
+                        match NativeWindow::settings_dialog(ui.hwnd) {
+                            Ok(dialog) => self.dialog = Some(dialog),
+                            Err(error) => {
+                                self.last_error = Some(format!(
+                                    "{}: {error:#}",
+                                    tr("无法打开设置", "Unable to open settings")
+                                ))
+                            }
+                        }
+                    }
+                    self.startup_operation("status");
+                }
+            }
+            native::LANGUAGE => {
+                if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
+                    let language = Language::from_index(dialog.combo_index(native::LANGUAGE));
+                    match preferences::save_all(self.close_behavior, language) {
+                        Ok(()) => {
+                            localization::set_language(language);
+                            self.resolved_english = localization::is_english();
+                            for ui in [&self.window, &self.dialog, &self.about, &self.notices]
+                                .into_iter()
+                                .flatten()
+                            {
+                                ui.retranslate();
+                            }
+                            self.desktop.retranslate();
+                        }
+                        Err(error) => {
+                            self.last_error = Some(format!(
+                                "{}: {error:#}",
+                                tr("无法保存语言设置", "Unable to save language preference")
+                            ))
+                        }
+                    }
+                }
+            }
+            native::CLOSE_BEHAVIOR => {
+                if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
+                    let behavior = match dialog.combo_index(native::CLOSE_BEHAVIOR) {
+                        1 => CloseBehavior::Tray,
+                        2 => CloseBehavior::Exit,
+                        _ => CloseBehavior::Ask,
+                    };
+                    match preferences::save(behavior) {
+                        Ok(()) => self.close_behavior = behavior,
+                        Err(error) => {
+                            self.last_error = Some(format!(
+                                "{}: {error:#}",
+                                tr("无法保存关闭选择", "Unable to save close preference")
+                            ))
+                        }
+                    }
+                }
+            }
+            native::QUIET => self.set_power_mode(PowerMode::Quiet),
+            native::BALANCE => self.set_power_mode(PowerMode::Balance),
+            native::PERFORMANCE => self.set_power_mode(PowerMode::Performance),
+            native::AUTO => {
+                self.slider_pending = None;
+                self.pending_fan_target = None;
+                self.request_fan(FanTarget::Auto);
+            }
+            native::MAXIMUM => {
+                self.slider_pending = None;
+                self.submit_manual(100);
+            }
+            native::MANUAL => self.submit_manual(self.manual_percent),
+            native::RECONNECT => {
+                self.slider_pending = None;
                 self.stop_fan();
                 self.fan_started = false;
+                self.request_fan(FanTarget::Auto);
             }
-        });
-    }
-
-    fn render_settings_page(&mut self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.add_space(40.0);
-            ui.heading("功能设定");
-            ui.add_space(20.0);
-
-            let mut enabled = self.startup_status == Some(StartupStatus::Enabled);
-            if ui
-                .add_enabled(
-                    self.startup_pending.is_none() && self.startup_status.is_some(),
-                    egui::Checkbox::new(&mut enabled, "当前用户登录后启动（管理员权限，进入托盘）"),
-                )
-                .changed()
-            {
-                self.startup_operation(if enabled { "enable" } else { "disable" });
+            native::STARTUP if self.startup_pending.is_none() && self.startup_status.is_some() => {
+                self.startup_operation(if self.startup_status == Some(StartupStatus::Enabled) {
+                    "disable"
+                } else {
+                    "enable"
+                });
             }
-            ui.label(match self.startup_status {
-                None => "正在查询登录启动状态…",
-                Some(StartupStatus::Disabled) => "登录启动：已关闭",
-                Some(StartupStatus::Enabled) => "登录启动：已启用",
-                Some(StartupStatus::Stale) => "登录启动：条目失效，请重新启用或关闭",
-            });
-            if ui
-                .add_enabled(
-                    self.startup_pending.is_none(),
-                    egui::Button::new("刷新启动状态"),
-                )
-                .clicked()
-            {
-                self.startup_operation("status");
-            }
-            ui.label("使用当前用户的计划任务，不保存密码；应用首次启动会显示 Windows 管理员提示。");
-            ui.add_space(20.0);
-            if ui
-                .checkbox(&mut self.close_to_tray, "关闭主窗口时缩到托盘")
-                .changed()
-            {
-                if let Err(error) = super::preferences::save(self.close_to_tray) {
-                    self.last_error = Some(format!("保存设置失败: {error:#}"));
+            native::RESET_CLOSE => match preferences::save(CloseBehavior::Ask) {
+                Ok(()) => self.close_behavior = CloseBehavior::Ask,
+                Err(error) => self.last_error = Some(format!("保存设置失败: {error:#}")),
+            },
+            native::REMEMBER => {
+                if let Some(ui) = &self.dialog {
+                    ui.check(native::REMEMBER, !ui.checked(native::REMEMBER));
                 }
             }
-            ui.label("默认关闭窗口即退出；托盘菜单始终可以退出。双击图标可打开主窗口。");
-        });
+            native::DIALOG_TRAY => self.dialog_choice(CloseBehavior::Tray),
+            native::DIALOG_EXIT => self.dialog_choice(CloseBehavior::Exit),
+            1 => {
+                // IsDialogMessage routes Enter to IDOK when there is no dialog template.
+                let id = unsafe {
+                    GetDlgCtrlID(windows::Win32::UI::Input::KeyboardAndMouse::GetFocus())
+                } as u16;
+                if self.dialog.as_ref().is_some_and(|ui| !ui.is_settings()) {
+                    self.dialog_choice(if id == native::DIALOG_EXIT {
+                        CloseBehavior::Exit
+                    } else {
+                        CloseBehavior::Tray
+                    });
+                } else if [
+                    native::QUIET,
+                    native::BALANCE,
+                    native::PERFORMANCE,
+                    native::AUTO,
+                    native::MANUAL,
+                    native::MAXIMUM,
+                    native::STARTUP,
+                    native::RESET_CLOSE,
+                    native::RECONNECT,
+                    native::SETTINGS,
+                    native::ABOUT,
+                    native::BILIBILI,
+                    native::PROJECT,
+                    native::NOTICES,
+                ]
+                .contains(&id)
+                {
+                    self.command(id);
+                }
+            }
+            native::DIALOG_CANCEL | 2 => self.cancel_dialog(),
+            _ => {}
+        }
+        self.render();
     }
-
-    fn render_info_page(&mut self, ui: &mut egui::Ui, snapshot: &crate::core::SystemSnapshot) {
-        ui.vertical(|ui| {
-            ui.add_space(20.0);
-            ui.heading("常规信息");
-            ui.add_space(20.0);
-
-            egui::Grid::new("info_grid")
-                .num_columns(2)
-                .spacing([40.0, 16.0])
-                .show(ui, |ui| {
-                    ui.label("系统");
-                    ui.label("Microsoft Windows 10 IoT 企业版 LTSC");
-                    ui.end_row();
-
-                    ui.label("磁盘信息");
-                    let disk_used = snapshot.disk_used as f64 / 1_073_741_824.0;
-                    let disk_total = snapshot.disk_total as f64 / 1_073_741_824.0;
-                    ui.label(format!(
-                        "使用率: {:.0}%, 可用/共享: {:.0}G/{:.0}G",
-                        snapshot.disk_usage,
-                        disk_total - disk_used,
-                        disk_total
-                    ));
-                    ui.end_row();
-
-                    ui.label("内存信息");
-                    let mem_used = snapshot.mem_used as f64 / 1_073_741_824.0;
-                    let mem_total = snapshot.mem_total as f64 / 1_073_741_824.0;
-                    ui.label(format!(
-                        "使用率: {:.0}%, 已用/共享: {:.1}G/{:.1}G",
-                        snapshot.mem_usage, mem_used, mem_total
-                    ));
-                    ui.end_row();
-
-                    if let Some(temp) = snapshot.cpu_temp {
-                        ui.label("CPU温度");
-                        ui.label(format!("{}°C", temp));
-                        ui.end_row();
-                    }
-
-                    if let Some(rpm) = snapshot.fan_speed {
-                        ui.label("风扇转速");
-                        ui.label(format!("{} RPM", rpm));
-                        ui.end_row();
-                    }
-                });
-        });
+    fn slider(&mut self, code: u32, source: HWND) {
+        let Some(ui) = self
+            .window
+            .as_ref()
+            .filter(|ui| ui.handle(native::TARGET) == source)
+        else {
+            return;
+        };
+        self.manual_percent = ui.percent();
+        if code == TB_THUMBTRACK {
+            self.slider_pending = None;
+        } else if code == TB_ENDTRACK || code == TB_THUMBPOSITION {
+            self.slider_pending = None;
+            self.submit_manual(self.manual_percent);
+        } else {
+            self.slider_pending = Some((Instant::now(), self.manual_percent));
+        }
+        self.render();
     }
-
+    fn submit_manual(&mut self, percent: u8) {
+        match FanTarget::percent(percent) {
+            Ok(target) => {
+                if !self.fan_started
+                    || self.fan_target != percent
+                    || self.pending_fan_target.is_some()
+                {
+                    self.request_fan(target);
+                }
+            }
+            Err(error) => self.last_error = Some(format!("{error:#}")),
+        }
+    }
+    fn desktop_action(&mut self, action: Action) {
+        match action {
+            Action::Mode(mode) => {
+                self.set_power_mode(mode);
+                if let Some(error) = &self.last_error {
+                    show_error(&localization::user_error(error));
+                }
+            }
+            Action::Open => {
+                if let Err(error) = self.open() {
+                    show_error(&localization::user_error(&format!(
+                        "打开窗口失败: {error:#}"
+                    )));
+                }
+            }
+            Action::Hide => self.hide(),
+            Action::Exit => self.exiting = true,
+        }
+    }
+    fn refresh_theme(&self) {
+        for ui in [&self.window, &self.dialog, &self.about, &self.notices]
+            .into_iter()
+            .flatten()
+        {
+            ui.refresh_theme();
+        }
+    }
+    fn tick(&mut self) {
+        if let Some(result) = self
+            .startup_pending
+            .as_ref()
+            .and_then(|pending| pending.try_recv().ok())
+        {
+            self.startup_pending = None;
+            self.startup_checked = Instant::now();
+            match result {
+                Ok(status) => self.startup_status = Some(status),
+                Err(error) => self.last_error = Some(format!("登录启动操作失败: {error:#}")),
+            }
+        }
+        if self.window.is_some() && self.startup_checked.elapsed() >= Duration::from_secs(30) {
+            self.startup_operation("status");
+            self.startup_checked = Instant::now();
+        }
+        if self.theme_checked.elapsed() >= Duration::from_secs(2) {
+            self.refresh_theme();
+            if localization::is_english() != self.resolved_english {
+                self.resolved_english = localization::is_english();
+                for ui in [&self.window, &self.dialog, &self.about, &self.notices]
+                    .into_iter()
+                    .flatten()
+                {
+                    ui.retranslate();
+                }
+                self.desktop.retranslate();
+            }
+            self.theme_checked = Instant::now();
+        }
+        if self.instance.take_open_request() {
+            self.open_requests += 1;
+            self.desktop_action(Action::Open);
+        }
+        for action in self.desktop.actions() {
+            self.desktop_action(action);
+        }
+        if self
+            .slider_pending
+            .is_some_and(|(at, _)| at.elapsed() >= Duration::from_millis(350))
+        {
+            let (_, value) = self.slider_pending.take().unwrap();
+            self.submit_manual(value);
+        }
+        self.fan_tick();
+        let snapshot = self.monitor.update();
+        self.desktop.refresh(snapshot.power_mode);
+        if self.window.is_none() && !self.desktop.is_available() {
+            self.last_error = Some("托盘连接失效，已重新打开主窗口".to_owned());
+            self.desktop_action(Action::Open);
+        }
+        self.smoke_tick();
+        self.render();
+    }
+    fn render(&mut self) {
+        if let Some(ui) = &self.about {
+            ui.refresh_year();
+        }
+        let snapshot = self.monitor.update();
+        let Some(ui) = &self.window else {
+            return;
+        };
+        ui.text(
+            native::CPU,
+            snapshot
+                .cpu_temp
+                .map(|v| format!("{v:.1} °C"))
+                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
+        );
+        ui.text(
+            native::PACKAGE_POWER,
+            snapshot
+                .cpu_package_power
+                .map(|v| format!("{v:.1} W"))
+                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
+        );
+        ui.text(
+            native::RPM,
+            snapshot
+                .fan_speed
+                .map(|v| format!("{v} RPM"))
+                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
+        );
+        let gb = |v: u64| v as f64 / 1073741824.0;
+        ui.text(
+            native::MEMORY,
+            format!(
+                "{:.0}% · {:.1}/{:.1} GiB",
+                snapshot.mem_usage,
+                gb(snapshot.mem_used),
+                gb(snapshot.mem_total)
+            ),
+        );
+        ui.text(
+            native::DISK,
+            format!(
+                "{:.0}% · {:.0}/{:.0} GiB",
+                snapshot.disk_usage,
+                gb(snapshot.disk_used),
+                gb(snapshot.disk_total)
+            ),
+        );
+        ui.progress(native::MEMORY_BAR, snapshot.mem_usage);
+        ui.progress(native::DISK_BAR, snapshot.disk_usage);
+        ui.mode(snapshot.power_mode.map(|m| m as u8));
+        for (id, mode) in [
+            (native::QUIET, PowerMode::Quiet),
+            (native::BALANCE, PowerMode::Balance),
+            (native::PERFORMANCE, PowerMode::Performance),
+        ] {
+            ui.check(id, snapshot.power_mode == Some(mode));
+        }
+        ui.check(native::AUTO, self.fan_target == 101);
+        ui.check(native::MAXIMUM, self.fan_target == 100);
+        ui.check(native::MANUAL, (35..100).contains(&self.fan_target));
+        let adjustable = !self.fan_started || self.fan_ready;
+        ui.enable(native::MANUAL, adjustable);
+        ui.enable(native::MAXIMUM, adjustable);
+        ui.enable(native::TARGET, adjustable);
+        ui.text(native::PERCENT, format!("{}%", self.manual_percent));
+        ui.fan_state(self.fan_target, self.fan_ready);
+        if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
+            dialog.check(
+                native::STARTUP,
+                self.startup_status == Some(StartupStatus::Enabled),
+            );
+            dialog.enable(
+                native::STARTUP,
+                self.startup_pending.is_none() && self.startup_status.is_some(),
+            );
+            dialog.text(
+                native::STARTUP_STATUS,
+                match self.startup_status {
+                    None => tr("正在查询登录启动状态…", "Checking sign-in startup…"),
+                    Some(StartupStatus::Disabled) => {
+                        tr("登录启动：已关闭", "Sign-in startup: disabled")
+                    }
+                    Some(StartupStatus::Enabled) => {
+                        tr("登录启动：已启用", "Sign-in startup: enabled")
+                    }
+                    Some(StartupStatus::Stale) => tr(
+                        "登录启动条目失效，请重新启用",
+                        "Startup task is invalid; enable it again",
+                    ),
+                }
+                .into(),
+            );
+            dialog.select(
+                native::CLOSE_BEHAVIOR,
+                match self.close_behavior {
+                    CloseBehavior::Ask => 0,
+                    CloseBehavior::Tray => 1,
+                    CloseBehavior::Exit => 2,
+                },
+            );
+            dialog.select(native::LANGUAGE, localization::language().index());
+            dialog.enable(
+                native::RESET_CLOSE,
+                self.close_behavior != CloseBehavior::Ask,
+            );
+        }
+        let error = self
+            .last_error
+            .as_ref()
+            .or(snapshot.power_mode_error.as_ref());
+        let message = error
+            .map(|error| localization::user_error(error))
+            .unwrap_or_default();
+        if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
+            dialog.text(native::ERROR, message.clone());
+        }
+        ui.text(native::ERROR, message);
+    }
+    fn smoke_tick(&mut self) {
+        if self.smoke_report.is_none() {
+            return;
+        }
+        let seconds = self.smoke_started.elapsed().as_secs();
+        if self.smoke_phase == 0 && seconds >= 1 {
+            self.smoke_phase = 1;
+            self.close_behavior = CloseBehavior::Tray;
+            if let Some(ui) = &self.window {
+                unsafe {
+                    let _ = PostMessageW(ui.hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+                }
+            }
+        }
+        if self.smoke_phase == 1 && seconds >= 4 {
+            self.smoke_phase = 2;
+            self.desktop_action(Action::Open);
+        }
+        if self.smoke_phase == 2 && seconds >= 5 {
+            self.smoke_phase = 3;
+            self.command(native::MANUAL);
+        }
+        if self.smoke_phase == 3 && seconds >= 6 && self.fan_ready {
+            self.smoke_phase = 4;
+        }
+        if self.smoke_phase == 4 && seconds >= 8 {
+            self.smoke_phase = 5;
+            self.desktop_action(Action::Hide);
+        }
+        let visible = self
+            .window
+            .as_ref()
+            .is_some_and(|ui| unsafe { IsWindowVisible(ui.hwnd).as_bool() });
+        let mode = self
+            .monitor
+            .update()
+            .power_mode
+            .map(|m| m as u8)
+            .unwrap_or(255);
+        let report=format!("{{\"Backend\":\"Win32\",\"TrayRegistered\":{},\"Hidden\":{},\"WindowVisible\":{},\"OpenRequests\":{},\"FanReady\":{},\"FanTarget\":{},\"Phase\":{},\"Seconds\":{},\"PowerMode\":{},\"WindowsCreated\":{},\"WindowsDestroyed\":{},\"ControlCount\":{},\"Dark\":{}}}",
+            self.desktop.is_available(),self.window.is_none(),visible,self.open_requests,self.fan_ready,self.fan_target,self.smoke_phase,seconds,mode,self.windows_created,self.windows_destroyed,
+            self.window.as_ref().map(|ui|ui.count()).unwrap_or(0),self.window.as_ref().is_some_and(|ui|ui.dark()));
+        let _ = std::fs::write(self.smoke_report.as_ref().unwrap(), report);
+        if seconds >= 13 {
+            self.exiting = true;
+        }
+    }
     fn set_power_mode(&mut self, mode: PowerMode) {
         if let Ok(mut hw) = self.monitor.get_hw_control().lock() {
             match hw.set_power_mode(mode) {
@@ -452,9 +760,28 @@ impl ControlCenterApp {
         });
     }
     fn request_fan(&mut self, target: FanTarget) {
+        if target == FanTarget::Auto && self.fan_started && !self.fan_ready {
+            self.stop_fan();
+            self.fan_started = false;
+        }
+        if self.fan.is_none() && !self.fan_started {
+            self.fan_started = true;
+            match FanClient::start() {
+                Ok(fan) => self.fan = Some(fan),
+                Err(error) => {
+                    self.last_error = Some(format!("风扇连接失败: {error:#}"));
+                    return;
+                }
+            }
+        }
         if let Some(fan) = &mut self.fan {
-            if let Err(error) = fan.send(target) {
-                self.last_error = Some(format!("风扇请求失败: {error:#}"));
+            if self.fan_ready || target == FanTarget::Auto {
+                self.pending_fan_target = None;
+                if let Err(error) = fan.send(target) {
+                    self.last_error = Some(format!("风扇请求失败: {error:#}"));
+                }
+            } else {
+                self.pending_fan_target = Some(target);
             }
         }
     }
@@ -466,6 +793,7 @@ impl ControlCenterApp {
             }
         }
         self.fan_ready = false;
+        self.pending_fan_target = None;
     }
     fn recover_fan(&mut self, reason: &str) {
         // A worker crash closes the pipe; the GUI makes an independent best-effort recovery.
@@ -477,14 +805,7 @@ impl ControlCenterApp {
             self.fan_target = 101;
         }
     }
-    fn fan_tick(&mut self, ctx: &egui::Context) {
-        if self.current_page == Page::Fan && !self.fan_started {
-            self.fan_started = true;
-            match FanClient::start(ctx) {
-                Ok(fan) => self.fan = Some(fan),
-                Err(error) => self.last_error = Some(format!("{error:#}")),
-            }
-        }
+    fn fan_tick(&mut self) {
         let result = self.fan.as_mut().map(FanClient::tick);
         match result {
             Some(Ok(lines)) => {
@@ -493,7 +814,10 @@ impl ControlCenterApp {
                     match fields.first().copied() {
                         Some("READY") => {
                             self.fan_ready = true;
-                            self.fan_notice = "已连接温度采样与风扇固件".to_owned();
+                            self.fan_notice = "连接正常".to_owned();
+                            if let Some(target) = self.pending_fan_target.take() {
+                                self.request_fan(target);
+                            }
                         }
                         Some("DATA") => {
                             if let Some(target) = fields.get(3).and_then(|v| v.parse().ok()) {
@@ -513,6 +837,7 @@ impl ControlCenterApp {
                         Some("AUTO") => self.fan_target = 101,
                         Some("UNAVAILABLE") => {
                             self.fan_ready = false;
+                            self.pending_fan_target = None;
                             self.fan_notice = line;
                         }
                         Some("RECOVERY") => {
@@ -536,188 +861,13 @@ impl ControlCenterApp {
             None => {}
         }
     }
-    fn desktop_action(&mut self, ctx: &egui::Context, action: Action) {
-        match action {
-            Action::Mode(mode) => {
-                self.set_power_mode(mode);
-                if let Some(error) = &self.last_error {
-                    show_error(error);
-                }
-                self.desktop.refresh(self.monitor.update().power_mode);
-            }
-            Action::Open => {
-                self.hidden = false;
-                // Native visibility wakes the event loop even when no egui frame can run.
-                unsafe {
-                    let _ = ShowWindow(self.window, SW_SHOW);
-                    let _ = ShowWindow(self.window, SW_RESTORE);
-                    let _ = SetForegroundWindow(self.window);
-                }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            }
-            Action::Hide => {
-                if self.desktop.is_available() {
-                    self.hidden = true;
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                    unsafe {
-                        let _ = ShowWindow(self.window, SW_HIDE);
-                    }
-                } else {
-                    self.last_error = Some("托盘图标不可用，保留主窗口".to_owned());
-                }
-            }
-            Action::Exit => {
-                self.exiting = true;
-                self.stop_fan();
-                // eframe must process one final frame to close a hidden viewport.
-                self.hidden = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                unsafe {
-                    let _ = ShowWindow(self.window, SW_SHOW);
-                }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                unsafe {
-                    let _ = PostMessageW(self.window, WM_CLOSE, WPARAM(0), LPARAM(0));
-                }
-            }
-        }
-    }
-    fn smoke_tick(&mut self, ctx: &egui::Context) {
-        if self.smoke_report.is_none() {
-            return;
-        }
-        let seconds = self.smoke_started.elapsed().as_secs();
-        if self.smoke_phase == 0 && seconds >= 1 {
-            self.smoke_phase = 1;
-            // Exercise the real window-close event without persisting a test preference.
-            self.close_to_tray = true;
-            unsafe {
-                let _ = PostMessageW(self.window, WM_CLOSE, WPARAM(0), LPARAM(0));
-            }
-        }
-        if self.smoke_phase == 1 && seconds >= 4 {
-            self.smoke_phase = 2;
-            self.desktop_action(ctx, Action::Open);
-        }
-        if self.smoke_phase == 2 && seconds >= 5 {
-            self.smoke_phase = 3;
-            self.current_page = Page::Fan;
-        }
-        if self.smoke_phase == 3 && seconds >= 6 && self.fan_ready {
-            self.smoke_phase = 4;
-            self.request_fan(FanTarget::Percent(50));
-        }
-        if self.smoke_phase == 4 && seconds >= 8 {
-            self.smoke_phase = 5;
-            self.desktop_action(ctx, Action::Hide);
-        }
-        let snapshot = self.monitor.update();
-        let report = format!("{{\"TrayRegistered\":{},\"Hidden\":{},\"WindowVisible\":{},\"OpenRequests\":{},\"FanReady\":{},\"FanTarget\":{},\"Phase\":{},\"Seconds\":{},\"PowerMode\":{:?}}}",
-            self.desktop.is_available(), self.hidden, unsafe { IsWindowVisible(self.window).as_bool() }, self.open_requests, self.fan_ready, self.fan_target, self.smoke_phase, seconds, snapshot.power_mode.map(|m| m as u8).unwrap_or(255));
-        let _ = std::fs::write(self.smoke_report.as_ref().unwrap(), report);
-        if seconds >= 13 {
-            self.desktop_action(ctx, Action::Exit);
-        }
-    }
-    fn background_tick(&mut self, ctx: &egui::Context) {
-        if let Some(result) = self
-            .startup_pending
-            .as_ref()
-            .and_then(|pending| pending.try_recv().ok())
-        {
-            self.startup_pending = None;
-            match result {
-                Ok(status) => self.startup_status = Some(status),
-                Err(error) => self.last_error = Some(format!("登录启动操作失败: {error:#}")),
-            }
-        }
-        if self.initial_minimized {
-            self.initial_minimized = false;
-            self.desktop_action(ctx, Action::Hide);
-        }
-        if self.instance.take_open_request() {
-            self.open_requests += 1;
-            self.desktop_action(ctx, Action::Open);
-        }
-        for action in self.desktop.actions() {
-            self.desktop_action(ctx, action);
-        }
-        self.fan_tick(ctx);
-        self.smoke_tick(ctx);
-        let snapshot = self.monitor.update();
-        self.desktop.refresh(snapshot.power_mode);
-        if self.hidden && !self.desktop.is_available() {
-            self.desktop_action(ctx, Action::Open);
-            self.last_error = Some("托盘连接失效，已重新打开主窗口".to_owned());
-        }
-    }
 }
-
-impl eframe::App for ControlCenterApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.background_tick(ctx);
-        if ctx.input(|input| input.viewport().close_requested()) && !self.exiting {
-            if self.close_to_tray && self.desktop.is_available() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                self.desktop_action(ctx, Action::Hide);
-            } else {
-                self.exiting = true;
-                self.stop_fan();
-            }
-        }
-        // 定期刷新数据
-        ctx.request_repaint_after(std::time::Duration::from_secs(1));
-
-        // 更新系统快照
-        let snapshot = self.monitor.update();
-        self.desktop.refresh(snapshot.power_mode);
-        if self.hidden && !self.desktop.is_available() {
-            self.desktop_action(ctx, Action::Open);
-            self.last_error = Some("托盘连接失效，已重新打开主窗口".to_owned());
-        }
-
-        // 左侧导航栏
-        egui::SidePanel::left("sidebar")
-            .resizable(false)
-            .exact_width(150.0)
-            .show(ctx, |ui| {
-                self.render_sidebar(ui);
-            });
-
-        // 右侧状态面板
-        egui::SidePanel::right("status")
-            .resizable(false)
-            .exact_width(200.0)
-            .show(ctx, |ui| {
-                self.render_status_panel(ui, &snapshot);
-            });
-
-        // 中央内容区
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                if self.current_page != Page::Mode {
-                    if let Some(error) = &self.last_error {
-                        ui.colored_label(Color32::from_rgb(255, 100, 100), error);
-                    }
-                }
-                match self.current_page {
-                    Page::Mode => self.render_mode_page(ui, &snapshot),
-                    Page::Fan => self.render_fan_page(ui, &snapshot),
-                    Page::Settings => self.render_settings_page(ui),
-                    Page::Info => self.render_info_page(ui, &snapshot),
-                }
-            });
-        });
-    }
-}
-
 impl Drop for ControlCenterApp {
     fn drop(&mut self) {
-        self.ticker_stop.store(true, Ordering::Relaxed);
         self.stop_fan();
+        self.notices.take();
+        self.about.take();
+        self.dialog.take();
+        self.window.take();
     }
 }
-
-use egui::Color32;

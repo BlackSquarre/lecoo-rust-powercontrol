@@ -1,6 +1,6 @@
 # Roadmap
 
-This document records planned work for **Lecoo Rust PowerControl**. Items 1–3 are implemented in the current working source; item 4 remains planned. Current functionality and verification limits are documented in [the feature guide](docs/features.md).
+This document records planned work for **Lecoo Rust PowerControl**. Items 1–3 and the native interface are implemented in the current working source; motion is deferred to prioritize memory usage. Current functionality and verification limits are documented in [the feature guide](docs/features.md) and [the current UI guide](docs/native-ui.md).
 
 ## Planned work
 
@@ -37,7 +37,9 @@ This document records planned work for **Lecoo Rust PowerControl**. Items 1–3 
 
 **Remaining acceptance limit:** the provider returns RPM but no target-duty or control-mode readback. Firmware responses and measured RPM are verified; this cannot fulfill exact setting readback. See [validation details](docs/testing.md).
 
-### 4. Redesign the interface and add restrained motion
+### 4. Native interface — implemented; motion deferred
+
+The current source follows the approved compact layout C with Win32 controls, CPU package watts, bilingual UI and About, green/blue/red power modes, automatic light/dark theming, fan-slider submission on release, and remembered close choices. Minimized windows are destroyed and recreated on demand. These UI changes are not yet in the published v0.0.2 ZIP. Animation is deferred to keep CPU/GPU and memory usage low.
 
 - Replace the current layout with an original visual design for Lecoo Rust PowerControl instead of copying the official control center's presentation.
 - Reorder the main screen around the tasks users need most: current device status, power-profile selection, cooling status, then secondary system-resource details.
@@ -55,7 +57,7 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 ## 中文
 
-本文记录 **Lecoo Rust PowerControl** 的后续计划。当前源码已实现第 1–3 项；第 4 项 UI 重设计和动画仍保留为计划。具体用法与验证边界见[功能说明](docs/features.md)。
+本文记录 **Lecoo Rust PowerControl** 的后续计划。当前源码已实现第 1–3 项与原生界面；动画为优先降低资源占用而暂缓。具体用法与验证边界见[功能说明](docs/features.md)与[当前界面说明](docs/native-ui.md)。
 
 ### 1. Windows 登录后自动启动 — 已实现
 
@@ -90,7 +92,9 @@ Keep this order unless hardware research changes the dependencies: startup prefe
 
 **尚未满足的验收限制：** 当前固件仅返回 RPM，没有目标占空比/控制模式读回接口。现已验证固件响应和实测转速，不能宣称精确设置读回验收完成，见[验证说明](docs/testing.md)。
 
-### 4. 重新设计 UI 并加入克制的动画
+### 4. 原生界面 — 已实现；动画暂缓
+
+当前源码按 A 版双栏布局实现 Windows 控件界面，模式颜色为绿/蓝/红，跟随系统深浅色主题；风扇滑条松开后自动提交，关闭窗口时询问并支持记住选择。最小化后销毁窗口，打开时重建。这些界面改动尚未包含在已发布的 v0.0.2 ZIP。动画为优先降低资源占用而暂缓。
 
 - 为 Lecoo Rust PowerControl 设计原创界面，不照搬官方控制中心的视觉呈现。
 - 重新安排主界面信息层级，优先展示设备状态和电源模式，其次是散热状态，再展示次要的系统资源信息。

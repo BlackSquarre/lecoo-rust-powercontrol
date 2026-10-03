@@ -33,7 +33,7 @@ Rust 私有工作集从启动约 136 MiB 下降到后期约 121 MiB，私有提�
 ## 复测
 
 ```powershell
-cargo build --release --locked --bin memory_probe
+cargo build --release --locked --features legacy-memory-probe --bin memory_probe
 # 在管理员终端逐个运行；graphics 会短暂显示一个诊断窗口。
 .\target\release\memory_probe.exe system-full
 .\target\release\memory_probe.exe system-memory

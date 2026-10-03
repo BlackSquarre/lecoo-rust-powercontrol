@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>A Rust-powered Windows control center for compatible Lecoo systems.</strong><br>
-  Switch power profiles and monitor hardware through a lightweight native desktop app built with Rust and egui.
+  Switch power profiles and monitor hardware through a lightweight Windows desktop app built with Rust.
 </p>
 
 <p align="center">
@@ -16,7 +16,11 @@
 
 Lecoo Rust PowerControl is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
 
+**Verified system:** Lecoo MINI PRO-AHP · **CPU:** AMD Ryzen 7 8745H
+
 ## Features
+
+The current source uses Windows controls with automatic light/dark theming, fan-slider submission and a remembered close choice. These UI changes are not yet in the published v0.0.2 ZIP; see the [current UI guide](docs/native-ui.md).
 
 - Switch between **Quiet**, **Balanced**, and **Performance** power profiles.
 - Read the active profile back from the hardware after a change.
@@ -73,3 +77,6 @@ docs/      Setup, testing, and hardware-interface documentation
 ## License
 
 No open-source license is granted. Copyright remains with BlackSquarre; public access to this repository does not grant permission to redistribute or reuse the code.
+
+
+The compact C source now includes CPU package watts, immediate Chinese/English switching, and About. Choose the language in Settings using the gear beside the device model. See [localization](docs/localization.md). These changes have not replaced the published v0.0.2 ZIP.

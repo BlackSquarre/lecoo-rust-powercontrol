@@ -1,14 +1,10 @@
-use windows::{
-    core::*,
-    Win32::System::Com::*,
-    Win32::System::Wmi::*,
-    Win32::Security::*,
-    Win32::Foundation::*,
-};
-use anyhow::{Result, Context, bail};
-use std::time::{Duration, Instant};
+use crate::core::types::{is_valid_fan_reading, is_valid_temperature, FeatureKey, PowerMode};
 use crate::platform::traits::HardwareControl;
-use crate::core::types::{PowerMode, FeatureKey, is_valid_fan_reading, is_valid_temperature};
+use anyhow::{bail, Context, Result};
+use std::time::{Duration, Instant};
+use windows::{
+    core::*, Win32::Foundation::*, Win32::Security::*, Win32::System::Com::*, Win32::System::Wmi::*,
+};
 
 const WMI_NAMESPACE: &str = "root\\WMI";
 const WMI_CLASS: &str = "PowerSwitchInterface";
@@ -18,6 +14,7 @@ pub struct WindowsHardwareControl {
     wmi_service: IWbemServices,
     instance_path: BSTR,
     sensors: Option<super::sensors::ExistingWinRing0>,
+    previous_energy: Option<super::sensors::CpuPackageEnergyReading>,
 }
 
 // COM 对象只在初始化它的 GUI 线程上使用。
@@ -30,28 +27,31 @@ impl WindowsHardwareControl {
 
             // 连接到 WMI 命名空间
             let namespace = BSTR::from(WMI_NAMESPACE);
-            let wmi_service = locator.ConnectServer(
-                &namespace,
-                &BSTR::new(),
-                &BSTR::new(),
-                &BSTR::new(),
-                0,
-                &BSTR::new(),
-                None,
-            ).context("连接 WMI 命名空间失败")?;
+            let wmi_service = locator
+                .ConnectServer(
+                    &namespace,
+                    &BSTR::new(),
+                    &BSTR::new(),
+                    &BSTR::new(),
+                    0,
+                    &BSTR::new(),
+                    None,
+                )
+                .context("连接 WMI 命名空间失败")?;
 
             // 设置代理安全级别
             // RPC_C_AUTHN_WINNT = 10, RPC_C_AUTHZ_NONE = 0
             CoSetProxyBlanket(
                 &wmi_service,
-                10,  // RPC_C_AUTHN_WINNT
-                0,   // RPC_C_AUTHZ_NONE
+                10, // RPC_C_AUTHN_WINNT
+                0,  // RPC_C_AUTHZ_NONE
                 None,
                 RPC_C_AUTHN_LEVEL_CALL,
                 RPC_C_IMP_LEVEL_IMPERSONATE,
                 None,
                 EOAC_NONE,
-            ).context("设置 WMI 代理安全级别失败")?;
+            )
+            .context("设置 WMI 代理安全级别失败")?;
 
             // 构造实例路径
             let instance_path = BSTR::from(format!(
@@ -64,26 +64,34 @@ impl WindowsHardwareControl {
                 wmi_service,
                 instance_path,
                 sensors: super::sensors::ExistingWinRing0::open().ok(),
+                previous_energy: None,
             })
         }
     }
 
-    unsafe fn invoke_method(&self, method_name: &str, in_params: Option<&IWbemClassObject>) -> Result<IWbemClassObject> {
+    unsafe fn invoke_method(
+        &self,
+        method_name: &str,
+        in_params: Option<&IWbemClassObject>,
+    ) -> Result<IWbemClassObject> {
         let method_bstr = BSTR::from(method_name);
 
         let mut out_params: Option<IWbemClassObject> = None;
 
-        self.wmi_service.ExecMethod(
-            &self.instance_path,
-            &method_bstr,
-            WBEM_FLAG_RETURN_WBEM_COMPLETE,
-            None,
-            in_params,
-            Some(&mut out_params),
-            None,
-        ).context(format!("调用 WMI 方法 {} 失败", method_name))?;
+        self.wmi_service
+            .ExecMethod(
+                &self.instance_path,
+                &method_bstr,
+                WBEM_FLAG_RETURN_WBEM_COMPLETE,
+                None,
+                in_params,
+                Some(&mut out_params),
+                None,
+            )
+            .context(format!("调用 WMI 方法 {} 失败", method_name))?;
 
-        let out_params = out_params.ok_or_else(|| anyhow::anyhow!("WMI 方法 {} 未返回结果", method_name))?;
+        let out_params =
+            out_params.ok_or_else(|| anyhow::anyhow!("WMI 方法 {} 未返回结果", method_name))?;
         let mut return_value = VARIANT::default();
         // 此 ACPI 提供程序的原生 COM 输出可能省略 ReturnValue，CIM 会补出该字段。
         match out_params.Get(&BSTR::from("ReturnValue"), 0, &mut return_value, None, None) {
@@ -93,22 +101,24 @@ impl WindowsHardwareControl {
                 }
             }
             Err(error) if error.code().0 == WBEM_E_NOT_FOUND.0 => {}
-            Err(error) => return Err(error).context(format!("读取 {} ReturnValue 失败", method_name)),
+            Err(error) => {
+                return Err(error).context(format!("读取 {} ReturnValue 失败", method_name))
+            }
         }
         Ok(out_params)
     }
 
-    unsafe fn get_u32_from_result(&self, result: &IWbemClassObject, prop_name: &str) -> Result<u32> {
+    unsafe fn get_u32_from_result(
+        &self,
+        result: &IWbemClassObject,
+        prop_name: &str,
+    ) -> Result<u32> {
         let prop_bstr = BSTR::from(prop_name);
         let mut variant = VARIANT::default();
 
-        result.Get(
-            &prop_bstr,
-            0,
-            &mut variant,
-            None,
-            None,
-        ).context(format!("获取属性 {} 失败", prop_name))?;
+        result
+            .Get(&prop_bstr, 0, &mut variant, None, None)
+            .context(format!("获取属性 {} 失败", prop_name))?;
 
         u32::try_from(&variant).context(format!("转换属性 {} 为 u32 失败", prop_name))
     }
@@ -118,13 +128,15 @@ impl WindowsHardwareControl {
 
         let mut class_obj: Option<IWbemClassObject> = None;
 
-        self.wmi_service.GetObject(
-            &class_bstr,
-            WBEM_FLAG_RETURN_WBEM_COMPLETE,
-            None,
-            Some(&mut class_obj),
-            None,
-        ).context("获取 WMI 类对象失败")?;
+        self.wmi_service
+            .GetObject(
+                &class_bstr,
+                WBEM_FLAG_RETURN_WBEM_COMPLETE,
+                None,
+                Some(&mut class_obj),
+                None,
+            )
+            .context("获取 WMI 类对象失败")?;
 
         let class_obj = class_obj.ok_or_else(|| anyhow::anyhow!("WMI 类对象为空"))?;
 
@@ -132,16 +144,14 @@ impl WindowsHardwareControl {
         let mut in_signature: Option<IWbemClassObject> = None;
         let mut out_signature: Option<IWbemClassObject> = None;
 
-        class_obj.GetMethod(
-            &method_bstr,
-            0,
-            &mut in_signature,
-            &mut out_signature,
-        ).context(format!("获取方法 {} 的输入参数失败", method_name))?;
+        class_obj
+            .GetMethod(&method_bstr, 0, &mut in_signature, &mut out_signature)
+            .context(format!("获取方法 {} 的输入参数失败", method_name))?;
 
         let in_signature = in_signature.ok_or_else(|| anyhow::anyhow!("方法签名为空"))?;
 
-        let in_params_instance = in_signature.SpawnInstance(0)
+        let in_params_instance = in_signature
+            .SpawnInstance(0)
             .context("创建输入参数实例失败")?;
 
         Ok(in_params_instance)
@@ -152,12 +162,7 @@ impl WindowsHardwareControl {
 
         let variant = VARIANT::from(value);
 
-        let result = params.Put(
-            &prop_bstr,
-            0,
-            &variant,
-            0,
-        );
+        let result = params.Put(&prop_bstr, 0, &variant, 0);
 
         result.context(format!("设置参数 {} 失败", name))?;
 
@@ -198,7 +203,12 @@ impl HardwareControl for WindowsHardwareControl {
                     return Ok(());
                 }
                 if Instant::now() >= deadline {
-                    bail!("模式切换验证失败：预期 {:?}，实际 {:?}，ResultStatus={}", mode, actual, status);
+                    bail!(
+                        "模式切换验证失败：预期 {:?}，实际 {:?}，ResultStatus={}",
+                        mode,
+                        actual,
+                        status
+                    );
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -213,7 +223,9 @@ impl HardwareControl for WindowsHardwareControl {
             let result = self.invoke_method("GetFanControl", Some(&in_params))?;
             let packed = self.get_u32_from_result(&result, "FanDuty")?;
 
-            if !is_valid_fan_reading(packed) || packed == u32::MAX { return Ok(None); }
+            if !is_valid_fan_reading(packed) || packed == u32::MAX {
+                return Ok(None);
+            }
             // The official provider packs both tachometers into FanNumber=1.
             match fan_num {
                 1 => Ok(Some(packed & 0xffff)),
@@ -230,7 +242,11 @@ impl HardwareControl for WindowsHardwareControl {
             let result = self.invoke_method("GetHwTemp", Some(&in_params))?;
             let temp = self.get_u32_from_result(&result, "Temp")?;
 
-            Ok(if is_valid_temperature(temp) { Some(temp) } else { None })
+            Ok(if is_valid_temperature(temp) {
+                Some(temp)
+            } else {
+                None
+            })
         }
     }
 
@@ -254,15 +270,44 @@ impl HardwareControl for WindowsHardwareControl {
     }
 
     fn get_cpu_temperature(&self) -> Result<Option<f32>> {
-        self.sensors.as_ref().map(|driver| driver.read_package_temperature().map(|sample| sample.celsius)).transpose()
+        self.sensors
+            .as_ref()
+            .map(|driver| {
+                driver
+                    .read_package_temperature()
+                    .map(|sample| sample.celsius)
+            })
+            .transpose()
+    }
+
+    fn get_cpu_package_power(&mut self) -> Result<Option<f64>> {
+        let Some(driver) = &self.sensors else {
+            return Ok(None);
+        };
+        let current = match driver.read_package_energy() {
+            Ok(sample) => sample,
+            Err(error) => {
+                self.previous_energy = None;
+                return Err(error);
+            }
+        };
+        // Store a fresh baseline even after a suspend, counter reset or invalid interval.
+        let previous = self.previous_energy.replace(current);
+        previous
+            .map(|previous| current.watts_since(&previous))
+            .transpose()
     }
 }
 
 impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
     fn write_fan(&mut self, target: crate::core::cooling::FanTarget) -> Result<u32> {
         target.validate()?;
-        if !self.is_elevated() { bail!("风扇控制需要管理员权限"); }
-        if !super::sensors::cpu_brand().starts_with("AMD Ryzen 7 8745H ") || self.get_feature_value(FeatureKey::FanCount)? != Some(1) {
+        if !self.is_elevated() {
+            bail!("风扇控制需要管理员权限");
+        }
+        if !super::sensors::cpu_brand().starts_with("AMD Ryzen 7 8745H ")
+            || self.get_feature_value(FeatureKey::FanCount)? != Some(1)
+        {
             bail!("仅开放已验证的 8745H 单风扇硬件");
         }
         unsafe {
@@ -273,8 +318,13 @@ impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
             self.get_u32_from_result(&output, "ResultStatus")
         }
     }
-    fn measured_rpm(&self) -> Result<u32> { self.get_fan_speed(1)?.context("风扇转速不可用") }
-    fn package_temperature(&self) -> Result<f32> { self.get_cpu_temperature()?.context("手动控制需要已加载 WinRing0 和有效 CPU 温度采样") }
+    fn measured_rpm(&self) -> Result<u32> {
+        self.get_fan_speed(1)?.context("风扇转速不可用")
+    }
+    fn package_temperature(&self) -> Result<f32> {
+        self.get_cpu_temperature()?
+            .context("手动控制需要已加载 WinRing0 和有效 CPU 温度采样")
+    }
 }
 
 impl WindowsHardwareControl {
@@ -288,7 +338,9 @@ impl WindowsHardwareControl {
                 process_handle,
                 TOKEN_QUERY,
                 &mut token,
-            ).is_err() {
+            )
+            .is_err()
+            {
                 return Ok(false);
             }
 

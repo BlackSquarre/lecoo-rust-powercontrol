@@ -7,13 +7,14 @@ authors = ["BlackSquarre"]
 description = "Rust-powered unofficial Windows power control center for compatible Lecoo systems"
 
 [dependencies]
-# GUI
-eframe = { version = "0.30", features = ["default_fonts"] }
-egui = "0.30"
-egui_extras = "0.30"
+# Historical allocation experiments only; not linked into the native application.
+eframe = { version = "0.30", features = ["default_fonts"], optional = true }
 
 # Windows API
 windows = { version = "0.58", features = [
+    "Win32_Globalization",
+    "Win32_System_SystemInformation",
+    "Win32_UI_Shell",
     "Win32_System_Com",
     "Win32_System_Wmi",
     "Win32_System_Ole",
@@ -24,6 +25,13 @@ windows = { version = "0.58", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_ProcessStatus",
+    "Win32_System_LibraryLoader",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_System_Registry",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
@@ -40,10 +48,17 @@ tracing-subscriber = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 tray-icon = "0.19"
-raw-window-handle = "0.6"
 
 [build-dependencies]
 winres = "0.1"
+
+[features]
+legacy-memory-probe = ["dep:eframe"]
+
+[[bin]]
+name = "memory_probe"
+path = "src/bin/memory_probe.rs"
+required-features = ["legacy-memory-probe"]
 
 [profile.release]
 opt-level = "z"         # Optimize for size

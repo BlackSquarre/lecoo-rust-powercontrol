@@ -1,6 +1,6 @@
 use crate::core::PowerMode;
+use crate::localization::{power_mode, text as tr};
 use anyhow::Result;
-use eframe::egui;
 use std::cell::Cell;
 use std::sync::mpsc::{self, Receiver};
 use tray_icon::{
@@ -18,11 +18,14 @@ pub enum Action {
 
 /// A small original power-button icon shared by the tray and window.
 pub fn icon_rgba() -> Vec<u8> {
-    let mut rgba = vec![0u8; 32 * 32 * 4];
-    for y in 0..32 {
-        for x in 0..32 {
-            let dx = x as f32 - 15.5;
-            let dy = y as f32 - 15.5;
+    icon_rgba_size(32)
+}
+pub fn icon_rgba_size(size: usize) -> Vec<u8> {
+    let mut rgba = vec![0u8; size * size * 4];
+    for y in 0..size {
+        for x in 0..size {
+            let dx = (x as f32 + 0.5) * 32.0 / size as f32 - 16.0;
+            let dy = (y as f32 + 0.5) * 32.0 / size as f32 - 16.0;
             let distance = (dx * dx + dy * dy).sqrt();
             let ring = (8.0..=11.0).contains(&distance) && !(dy < -4.0 && dx.abs() < 5.0);
             let stem = dx.abs() < 1.8 && (-12.0..=0.0).contains(&dy);
@@ -33,7 +36,7 @@ pub fn icon_rgba() -> Vec<u8> {
             } else {
                 [0, 0, 0, 0]
             };
-            rgba[(y * 32 + x) * 4..(y * 32 + x + 1) * 4].copy_from_slice(&color);
+            rgba[(y * size + x) * 4..(y * size + x + 1) * 4].copy_from_slice(&color);
         }
     }
     rgba
@@ -44,17 +47,23 @@ pub struct Desktop {
     modes: Vec<(PowerMode, CheckMenuItem)>,
     receiver: Receiver<Action>,
     registered: Cell<bool>,
+    commands: [MenuItem; 3],
 }
 impl Desktop {
-    pub fn new(ctx: &egui::Context) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let menu = Menu::new();
         let modes: Vec<_> = [PowerMode::Quiet, PowerMode::Balance, PowerMode::Performance]
             .into_iter()
-            .map(|mode| (mode, CheckMenuItem::new(mode.name(), true, false, None)))
+            .map(|mode| {
+                (
+                    mode,
+                    CheckMenuItem::new(power_mode(mode), true, false, None),
+                )
+            })
             .collect();
-        let open = MenuItem::new("打开主窗口", true, None);
-        let hide = MenuItem::new("最小化到托盘", true, None);
-        let exit = MenuItem::new("退出", true, None);
+        let open = MenuItem::new(tr("打开主窗口", "Open window"), true, None);
+        let hide = MenuItem::new(tr("最小化到托盘", "Minimize to tray"), true, None);
+        let exit = MenuItem::new(tr("退出", "Exit"), true, None);
         for (_, item) in &modes {
             menu.append(item)?;
         }
@@ -74,7 +83,6 @@ impl Desktop {
         let open_id = open.id().clone();
         let hide_id = hide.id().clone();
         let exit_id = exit.id().clone();
-        let context = ctx.clone();
         let menu_sender = sender.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             let action = if event.id == open_id {
@@ -90,10 +98,8 @@ impl Desktop {
             };
             if let Some(action) = action {
                 let _ = menu_sender.send(action);
-                context.request_repaint();
             }
         }));
-        let context = ctx.clone();
         TrayIconEvent::set_event_handler(Some(move |event| {
             if matches!(
                 event,
@@ -103,7 +109,6 @@ impl Desktop {
                 }
             ) {
                 let _ = sender.send(Action::Open);
-                context.request_repaint();
             }
         }));
         Ok(Self {
@@ -111,6 +116,7 @@ impl Desktop {
             modes,
             receiver,
             registered: Cell::new(true),
+            commands: [open, hide, exit],
         })
     }
     pub fn actions(&self) -> Vec<Action> {
@@ -120,7 +126,9 @@ impl Desktop {
         for (candidate, item) in &self.modes {
             item.set_checked(mode == Some(*candidate));
         }
-        let text = mode.map(|value| value.name()).unwrap_or("模式读取失败");
+        let text = mode
+            .map(power_mode)
+            .unwrap_or(tr("模式读取失败", "Power mode unavailable"));
         // NIM_MODIFY acknowledges the registered icon even when its overflow rectangle is unavailable.
         self.registered.set(
             self.icon
@@ -130,6 +138,18 @@ impl Desktop {
     }
     pub fn is_available(&self) -> bool {
         self.registered.get()
+    }
+    pub fn retranslate(&self) {
+        for (mode, item) in &self.modes {
+            item.set_text(power_mode(*mode));
+        }
+        for (item, text) in self.commands.iter().zip([
+            tr("打开主窗口", "Open window"),
+            tr("最小化到托盘", "Minimize to tray"),
+            tr("退出", "Exit"),
+        ]) {
+            item.set_text(text);
+        }
     }
 }
 pub fn show_error(message: &str) {

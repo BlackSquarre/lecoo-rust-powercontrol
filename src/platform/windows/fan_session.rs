@@ -145,7 +145,7 @@ pub struct FanClient {
     heartbeat: Instant,
 }
 impl FanClient {
-    pub fn start(ctx: &eframe::egui::Context) -> Result<Self> {
+    pub fn start() -> Result<Self> {
         let mut child = Command::new(std::env::current_exe()?)
             .arg("--fan-worker")
             .stdin(Stdio::piped())
@@ -157,7 +157,6 @@ impl FanClient {
         let input = child.stdin.take();
         let output = child.stdout.take().context("风扇守护输出不可用")?;
         let (sender, messages) = mpsc::channel();
-        let context = ctx.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(output).lines() {
                 let Ok(line) = line else {
@@ -166,10 +165,8 @@ impl FanClient {
                 if sender.send(line).is_err() {
                     return;
                 }
-                context.request_repaint();
             }
             let _ = sender.send("DIED 风扇守护进程已退出".to_owned());
-            context.request_repaint();
         });
         Ok(Self {
             child,

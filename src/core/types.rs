@@ -42,16 +42,16 @@ pub enum FeatureKey {
     ModeCount = 2,
     FanCount = 3,
     GpuCapability = 4,
-    CpuTurbo = 5,      // 测试显示不支持（返回255）
-    LightMode = 7,     // 测试显示不支持（返回255）
+    CpuTurbo = 5,  // 测试显示不支持（返回255）
+    LightMode = 7, // 测试显示不支持（返回255）
 }
 
 /// 风扇控制模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FanMode {
-    Auto,        // 自动模式
-    Custom,      // 自定义模式
-    Maximum,     // 最大模式
+    Auto,    // 自动模式
+    Custom,  // 自定义模式
+    Maximum, // 最大模式
 }
 
 impl FanMode {
@@ -94,6 +94,7 @@ pub struct SystemSnapshot {
     pub power_mode_error: Option<String>,
     pub fan_speed: Option<u32>,
     pub cpu_temp: Option<f32>,
+    pub cpu_package_power: Option<f64>,
     pub disk_usage: f32,
     pub disk_total: u64,
     pub disk_used: u64,
@@ -110,6 +111,7 @@ impl Default for SystemSnapshot {
             power_mode_error: None,
             fan_speed: None,
             cpu_temp: None,
+            cpu_package_power: None,
             disk_usage: 0.0,
             disk_total: 0,
             disk_used: 0,

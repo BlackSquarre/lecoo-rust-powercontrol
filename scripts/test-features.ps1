@@ -116,6 +116,7 @@ try {
     }
     if ($taskGui.ExitCode -ne 0) { throw ('GUI failed: '+$taskGuiErrors.Result) }
     if (!$taskReport.Gui[0].Hidden -or !$taskReport.Gui[0].TrayRegistered) { throw 'Tray hiding failed' }
+    if ($taskReport.Gui[0].Backend -eq 'Win32' -and ($taskReport.Gui[0].ControlCount -ne 0 -or $taskReport.Gui[0].WindowsDestroyed -lt 1)) { throw 'Native window controls were not released on hide' }
     if (!($taskReport.Gui | Where-Object { $_.OpenRequests -ge 1 -and !$_.Hidden })) { throw 'Second launch failed to reopen existing window' }
     if (!($taskReport.Gui | Where-Object { $_.FanReady -and $_.FanTarget -eq 50 })) { throw 'GUI manual fan path was not exercised' }
     if (!($taskReport.Gui | Where-Object { $_.Hidden -and !$_.WindowVisible -and $_.FanTarget -eq 50 -and $_.Seconds -ge 12 })) { throw 'Hidden window did not keep manual-session heartbeats alive' }

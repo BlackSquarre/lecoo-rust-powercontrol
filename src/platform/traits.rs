@@ -1,5 +1,5 @@
+use crate::core::types::{FeatureKey, PowerMode};
 use anyhow::Result;
-use crate::core::types::{PowerMode, FeatureKey};
 
 /// 硬件控制统一接口
 pub trait HardwareControl {
@@ -17,7 +17,13 @@ pub trait HardwareControl {
     fn get_hw_temp(&self, temp_type: u8) -> Result<Option<u32>>;
 
     /// CPU package temperature in real Celsius, without the vendor GUI's scaling.
-    fn get_cpu_temperature(&self) -> Result<Option<f32>> { Ok(None) }
+    fn get_cpu_temperature(&self) -> Result<Option<f32>> {
+        Ok(None)
+    }
+    /// Average CPU package power over the preceding sampling interval, in watts.
+    fn get_cpu_package_power(&mut self) -> Result<Option<f64>> {
+        Ok(None)
+    }
 
     /// 获取功能值（返回 None 表示不支持）
     fn get_feature_value(&self, key: FeatureKey) -> Result<Option<u32>>;

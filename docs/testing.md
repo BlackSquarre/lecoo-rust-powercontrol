@@ -36,6 +36,8 @@
 
 ## 独立传感器采样实验
 
+当前源码的原生界面实机验证入口为 `scripts/test-native-ui.ps1`；它会暂时修改电源模式、应用关闭偏好与系统应用深浅色主题，在 finally 中恢复。验证滑条自动提交、关闭对话框期间的心跳、记住/重置/取消、标题栏和客户区主题切换，以及反复销毁/重建窗口时的 GDI/USER 资源。详情见[当前界面说明](native-ui.md)。
+
 `scripts/test-sensors.ps1` 构建并运行 `sensor_probe` 和传感器单元测试；使用已加载的 WinRing0 驱动，在 Ryzen 7 8745H 上核对原生 CPU 温度采样，同时记录 WMI 转速、温度和电源模式。脚本请求管理员权限，报告写入 `logs/driver-research`。它不包含手动风扇调节测试，温度采样需要短暂改变并恢复 PCI SMN 地址选择寄存器。
 
 本机 5 次采样与 3 项单元测试已通过；范围和限制见[调查文档](reference/wmi/native-sensor-research.md)。该诊断程序暂不加入正式发行包。
@@ -61,3 +63,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-features.ps1
 2026-10-02 的发布构建复核：`features-release.json` 中 `Passed=true`、`Restored=true`，10 项单元测试通过，35/50/100 的独立读数为 2026/2645/3743 RPM；窗口隐藏超过 3 秒仍保持 50 目标心跳，隐藏时退出后自动恢复。`logs/power-mode-tests/power-modes-features-release.json` 的三种模式读回也通过，原始模式 1 已恢复。两份报告中的应用 SHA256 与 `dist/SHA256SUMS.txt` 一致；测试后登录启动任务不存在。
 
 **验证边界：** RPM 变化证明目标请求影响风扇，但不证明实际占空比或自动/手动模式；固件没有这些读回接口。过温、通讯失败和恢复失败采用故障注入测试，不人为加热设备、卸载驱动或切断固件通信。自动恢复有请求响应与 RPM 读回，不能声称精确模式验证或所有负载下安全。限制和使用说明见[功能文档](features.md)。
+
+
+## 紧凑 C 版与中英文界面
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-native-ui.ps1` 现包含中英文切换、进程重启后的语言记忆、实时 CPU Package 功率、设置/关于/第三方声明、当前年份、弹窗期间手动风扇心跳和八次界面销毁重建。报告与实际截图见本地 `logs/compact-ui/`。测试临时修改语言偏好、系统应用主题、电源模式及风扇目标，结束后恢复偏好、主题与模式，并请求风扇自动控制。应先正常关闭正在使用的应用。
+
+2026-10-04 的 `native-ui-final.json` 与 `features-final.json` 通过，均恢复测试环境且对应同一二进制 SHA256；18 项单元测试通过。中英术语见 [localization.md](localization.md)。
