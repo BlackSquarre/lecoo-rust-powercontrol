@@ -1,0 +1,69 @@
+name: Update Windows installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release whose installer should be updated
+        required: true
+        default: v0.0.3
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-installer:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check out installer source
+        uses: actions/checkout@v4
+
+      - name: Obtain existing released application
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = $env:RELEASE_TAG
+          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Expected a version tag' }
+          $version = $Matches[1]
+          $cargoVersion = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "([0-9.]+)"').Matches.Groups[1].Value
+          if ($version -ne $cargoVersion) { throw 'Installer source and release versions differ' }
+          $base = "lecoo-rust-powercontrol-$tag-windows-x64"
+          New-Item -ItemType Directory -Path dist,target/release -Force | Out-Null
+          gh release download $tag --pattern "$base.zip" --pattern "$base.zip.sha256" --dir dist
+          if ($LASTEXITCODE -ne 0) { throw 'Released ZIP download failed' }
+          $archive = "dist/$base.zip"
+          $expected = (Get-Content -LiteralPath "$archive.sha256").Split(' ')[0]
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expected) { throw 'Released ZIP checksum differs' }
+          Expand-Archive -LiteralPath $archive -DestinationPath target/release
+          foreach ($line in Get-Content -LiteralPath target/release/SHA256SUMS.txt) {
+            $hash, $name = $line -split '\s+', 2
+            if ($name -notin @('lecoo-control-center.exe','hardware_test.exe')) { throw 'Unexpected released executable' }
+            if ((Get-FileHash -LiteralPath "target/release/$name" -Algorithm SHA256).Hash -ne $hash) { throw 'Released executable checksum differs' }
+          }
+          "APP_VERSION=$version" >> $env:GITHUB_ENV
+          "ASSET_BASE=$base" >> $env:GITHUB_ENV
+
+      - name: Compile updated installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (!(Test-Path -LiteralPath $compiler)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Compiler installation failed' }
+          }
+          & $compiler "/DAppVersion=$env:APP_VERSION" "/O$PWD/dist" installer/setup.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
+          $setup = "dist/$env:ASSET_BASE-setup.exe"
+          "$((Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($setup))" | Set-Content -LiteralPath "$setup.sha256" -Encoding ASCII
+
+      - name: Replace installer assets
+        shell: pwsh
+        run: |
+          $setup = "dist/$env:ASSET_BASE-setup.exe"
+          gh release upload "$env:RELEASE_TAG" $setup "$setup.sha256" --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed' }

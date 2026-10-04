@@ -36,7 +36,8 @@ Name: "{group}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.e
 Name: "{autodesktop}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\lecoo-control-center.exe"; Description: "{cm:LaunchProgram,Lecoo Rust PowerControl}"; Flags: nowait postinstall skipifsilent
+; The app requires elevation. postinstall otherwise defaults to the pre-UAC user.
+Filename: "{app}\lecoo-control-center.exe"; Description: "{cm:LaunchProgram,Lecoo Rust PowerControl}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\uninstall-startup.ps1"" -Executable ""{app}\lecoo-control-center.exe"""; Flags: runhidden; RunOnceId: "RemoveInstalledStartupTasks"
