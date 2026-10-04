@@ -8,6 +8,8 @@ Temperature is read through Windows ACPI thermal-zone WMI. Package power and all
 
 The language menu offers System default, 简体中文 and English. The default follows the Windows UI language (Chinese UI uses Simplified Chinese; other UI languages use English). Explicit language choices persist beside the close preference and update the dashboard, settings, About, close prompt and tray menu immediately. Theme remains independent of language and follows the Windows app light/dark setting. See [terminology and localization](localization.md).
 
+The revised settings window in the current source uses a 380 × 440 logical-pixel layout, slightly narrower than the main window. Startup and Window & language have separate cards, with 16-pixel outer margins and 16-pixel card padding. Close behavior and language share one label column and one field column; reset sits immediately beneath close behavior as a secondary text action. Application information and About form the footer, with a separate full-width error area. The layout scales with Windows DPI and uses the existing system fonts and theme palette.
+
 About shows the application icon, name, version, author, current local-calendar copyright year, Bilibili and project-website links, and third-party notices. The year updates while the window is open. Links open in the default browser; license text opens in a native read-only scrolling EDIT control. No embedded browser, custom graphics context or bitmap back buffer is allocated.
 
 Auto and Maximum remain available. The Manual option and slider are disabled pending validation of a sensor for CPU protection. Worker heartbeat and RPM failure recovery remain active. A worker starts only when cooling controls are used.

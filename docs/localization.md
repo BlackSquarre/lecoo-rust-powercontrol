@@ -15,7 +15,10 @@
 | 自动 / 手动 / 最大 | Automatic / Manual / Maximum | 自动控制、手动目标、最大目标 |
 | 设置 | Settings | 主窗口型号右侧的齿轮入口 |
 | 登录后启动（进入托盘） | Start at sign-in (minimized to tray) | 当前用户登录后启动，默认关闭 |
-| 关闭窗口 | When closing the window | 设置窗口中的关闭行为标签 |
+| 关闭窗口时 | When closing | 设置窗口中的关闭行为标签 |
+| 启动 | Startup | 设置中的登录启动分组 |
+| 窗口与语言 | Window & language | 设置中的窗口行为和语言分组 |
+| 应用信息 | Application | 设置底部的关于入口 |
 | 每次询问 | Ask every time | 不保存固定关闭动作 |
 | 最小化到托盘 / 退出 | Minimize to tray / Exit | 通知区域与真正退出是不同动作 |
 | 重置关闭选择 | Reset close preference | 将已记住的动作恢复为每次询问 |
