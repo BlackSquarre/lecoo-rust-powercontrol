@@ -21,7 +21,9 @@ Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属�
 
 ## 功能
 
-使用紧凑的 Windows 原生界面，支持系统深浅色主题、中英文切换、关于窗口和可记住的关闭选择；见[界面说明](docs/native-ui.md)。
+使用紧凑的 Windows 原生界面，支持系统深浅色主题、八种界面语言、关于窗口和可记住的关闭选择；见[界面说明](docs/native-ui.md)。
+
+**界面语言：** 简体中文 | English | 繁體中文 | 日本語 | 한국어 | Español | Français | Deutsch。在设置中选择语言或跟随 Windows 显示语言；切换立即生效，重启后保留。
 
 - 切换**安静、均衡、性能**三种电源模式。
 - 切换后重新读取硬件状态，确认模式是否生效。
@@ -74,6 +76,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 
 ```text
 src/       Rust 应用、界面、硬件抽象和测试工具
+resources/ 八种语言的独立 TOML 界面资源
 scripts/   Windows 构建与自动硬件测试脚本
 docs/      环境准备、测试和硬件接口文档
 .github/   Windows CI 与发布工作流

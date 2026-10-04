@@ -13,7 +13,7 @@ use crate::platform::windows::{
 };
 use crate::platform::HardwareControl;
 use anyhow::Result;
-use lecoo_control_center::localization::{self, text as tr, Language};
+use lecoo_control_center::localization::{self, text as tr, Language, Text};
 use std::{
     path::PathBuf,
     sync::mpsc::{self, Receiver},
@@ -38,7 +38,7 @@ pub struct ControlCenterApp {
     startup_pending: Option<Receiver<anyhow::Result<StartupStatus>>>,
     startup_checked: Instant,
     theme_checked: Instant,
-    resolved_english: bool,
+    resolved_language: Language,
     slider_pending: Option<(Instant, u8)>,
     pending_fan_target: Option<FanTarget>,
     fan: Option<FanClient>,
@@ -77,7 +77,7 @@ impl ControlCenterApp {
             startup_pending: None,
             startup_checked: Instant::now(),
             theme_checked: Instant::now(),
-            resolved_english: localization::is_english(),
+            resolved_language: localization::resolved_language(),
             slider_pending: None,
             pending_fan_target: None,
             fan: None,
@@ -308,10 +308,7 @@ impl ControlCenterApp {
                         SW_SHOWNORMAL,
                     );
                     if result.0 as isize <= 32 {
-                        show_error(tr(
-                            "无法打开链接，请检查默认浏览器设置",
-                            "Unable to open the link. Check your default browser settings.",
-                        ));
+                        show_error(tr(Text::ErrorsOpenLink));
                     }
                 }
             }
@@ -321,10 +318,8 @@ impl ControlCenterApp {
                         match NativeWindow::settings_dialog(ui.hwnd) {
                             Ok(dialog) => self.dialog = Some(dialog),
                             Err(error) => {
-                                self.last_error = Some(format!(
-                                    "{}: {error:#}",
-                                    tr("无法打开设置", "Unable to open settings")
-                                ))
+                                self.last_error =
+                                    Some(format!("{}: {error:#}", tr(Text::ErrorsOpenSettings)))
                             }
                         }
                     }
@@ -337,7 +332,7 @@ impl ControlCenterApp {
                     match preferences::save_all(self.close_behavior, language) {
                         Ok(()) => {
                             localization::set_language(language);
-                            self.resolved_english = localization::is_english();
+                            self.resolved_language = localization::resolved_language();
                             for ui in [&self.window, &self.dialog, &self.about, &self.notices]
                                 .into_iter()
                                 .flatten()
@@ -347,10 +342,8 @@ impl ControlCenterApp {
                             self.desktop.retranslate();
                         }
                         Err(error) => {
-                            self.last_error = Some(format!(
-                                "{}: {error:#}",
-                                tr("无法保存语言设置", "Unable to save language preference")
-                            ))
+                            self.last_error =
+                                Some(format!("{}: {error:#}", tr(Text::ErrorsSaveLanguage)))
                         }
                     }
                 }
@@ -365,10 +358,8 @@ impl ControlCenterApp {
                     match preferences::save(behavior) {
                         Ok(()) => self.close_behavior = behavior,
                         Err(error) => {
-                            self.last_error = Some(format!(
-                                "{}: {error:#}",
-                                tr("无法保存关闭选择", "Unable to save close preference")
-                            ))
+                            self.last_error =
+                                Some(format!("{}: {error:#}", tr(Text::ErrorsSaveClose)))
                         }
                     }
                 }
@@ -525,8 +516,8 @@ impl ControlCenterApp {
         }
         if self.theme_checked.elapsed() >= Duration::from_secs(2) {
             self.refresh_theme();
-            if localization::is_english() != self.resolved_english {
-                self.resolved_english = localization::is_english();
+            if localization::resolved_language() != self.resolved_language {
+                self.resolved_language = localization::resolved_language();
                 for ui in [&self.window, &self.dialog, &self.about, &self.notices]
                     .into_iter()
                     .flatten()
@@ -583,14 +574,14 @@ impl ControlCenterApp {
             snapshot
                 .thermal_zone_temp
                 .map(|v| format!("{v:.1} °C"))
-                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
+                .unwrap_or_else(|| tr(Text::CommonUnavailable).into()),
         );
         ui.text(
             native::RPM,
             snapshot
                 .fan_speed
                 .map(|v| format!("{v} RPM"))
-                .unwrap_or_else(|| tr("不可用", "Unavailable").into()),
+                .unwrap_or_else(|| tr(Text::CommonUnavailable).into()),
         );
         let gb = |v: u64| v as f64 / 1073741824.0;
         ui.text(

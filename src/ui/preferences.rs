@@ -99,8 +99,8 @@ mod tests {
         assert_eq!(parse("close_to_tray=true\n"), CloseBehavior::Tray);
     }
     #[test]
-    fn bilingual_preferences_preserve_both_fields_and_legacy_defaults() {
-        for language in [Language::System, Language::Chinese, Language::English] {
+    fn multilingual_preferences_preserve_both_fields_and_legacy_defaults() {
+        for language in Language::ALL {
             for behavior in [CloseBehavior::Ask, CloseBehavior::Tray, CloseBehavior::Exit] {
                 let contents = format!(
                     "close_behavior={}\nlanguage={}\n",

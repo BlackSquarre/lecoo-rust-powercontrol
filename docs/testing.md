@@ -6,7 +6,7 @@
 
 1. `cargo fmt --all -- --check`：检查 Rust 格式。
 2. `cargo clippy --all-targets --locked -- -D warnings`：检查默认功能下的库、应用和硬件测试工具，警告按错误处理。
-3. `cargo test --all-targets --locked`：运行库和二进制目标中的单元测试，包括冷却状态机、温度换算、中英文资源和界面偏好解析。
+3. `cargo test --all-targets --locked`：运行库和二进制目标中的单元测试，包括冷却状态机、温度换算、独立语言资源校验、Windows 显示语言映射和界面偏好解析。
 4. `cargo build --release --locked --bin lecoo-control-center --bin hardware_test`：验证两份正式发布程序能完成编译和链接。
 
 依赖使用 `Cargo.lock` 并缓存；任务只需要仓库读取权限，无需配置额外 Secrets。默认未启用的 `legacy-memory-probe` 实验功能不在 CI 编译范围内。版本标签触发的发布流程也执行所有默认目标的单元测试，并继续验证安装及卸载。
@@ -15,7 +15,17 @@ CI 的测试使用 Rust 测试入口，不运行应用或硬件工具的 `main`�
 
 本地可依次执行以上四条命令。由于嵌入了管理员清单，单元测试需要在管理员终端运行；GitHub 的 Windows 托管环境已具备管理员权限。
 
+多语言原生窗口检查可在管理员终端运行：
+
+```powershell
+cargo test --bin lecoo-control-center --locked native_language_switching_and_text_fit -- --ignored --nocapture --test-threads=1
+```
+
+此检查在独立测试进程中创建并隐藏模拟窗口，验证八种语言切换、九项语言菜单及当前 DPI 下的控件文案宽度，不调用硬件接口、不修改用户偏好。普通终端可参照 `scripts/test-mode-icons.ps1`，仅为测试进程临时设置 `__COMPAT_LAYER=RunAsInvoker`，运行后恢复环境变量。不同显示缩放、字体回退和语言区域仍应在对应系统上检查。
+
 # v0.0.3 当前验证
+
+资源优化的独立检查：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-resource-usage.ps1 -Measure`。脚本验证全部默认目标的测试、采样调度、异步守护退出、原生启动任务定义、五秒空闲时的事件唤醒和窗口资源释放，并采集可见/隐藏监视器探针。硬件返回值采用模拟对象；仅查询实际系统指标和现有启动任务，不写硬件、偏好或任务。结果保存在 `logs/resource-optimization/`；详情见[资源优化记录](resource-optimization.md)。
 
 模式图标的独立检查：在配置好 MSVC 的终端运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-mode-icons.ps1`。测试模拟安静/均衡/性能/未知状态，核对任务栏与标题栏使用的大小图标、设置/关于/声明/关闭弹窗图标、100/125/150/200% DPI、重复刷新句柄复用及 12 轮窗口资源释放。不调用硬件接口、不改变用户偏好；可以在应用已运行时执行。测试程序用当前用户权限运行。报告保存到 `logs/mode-icons/native-icons.json`。
 

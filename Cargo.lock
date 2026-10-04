@@ -2004,6 +2004,7 @@ dependencies = [
  "eframe",
  "sysinfo",
  "thiserror 1.0.69",
+ "toml 0.5.11",
  "tracing",
  "tracing-subscriber",
  "tray-icon",

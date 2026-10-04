@@ -12,11 +12,11 @@ fn main() {
     ui::initialize_language();
     if let Err(error) = run() {
         platform::windows::desktop::show_error(&format!(
-            "{}: {error}",
+            "{}: {}",
             lecoo_control_center::localization::text(
-                "应用启动失败",
-                "Unable to start the application"
-            )
+                lecoo_control_center::localization::Text::ErrorsAppStart
+            ),
+            lecoo_control_center::localization::user_error(&format!("{error:#}"))
         ));
         std::process::exit(1);
     }
@@ -55,11 +55,11 @@ fn run() -> anyhow::Result<()> {
         Ok(None) => return Ok(()),
         Err(error) => {
             platform::windows::desktop::show_error(&format!(
-                "{}: {error:#}",
+                "{}: {}",
                 lecoo_control_center::localization::text(
-                    "单实例初始化失败",
-                    "Unable to initialize the application instance"
-                )
+                    lecoo_control_center::localization::Text::ErrorsInstanceInit
+                ),
+                lecoo_control_center::localization::user_error(&format!("{error:#}"))
             ));
             return Ok(());
         }

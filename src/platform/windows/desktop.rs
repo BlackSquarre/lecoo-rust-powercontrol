@@ -1,6 +1,6 @@
 use super::icons::ModeIcon;
 use crate::core::PowerMode;
-use crate::localization::{power_mode, text as tr};
+use crate::localization::{power_mode, text as tr, Text};
 use anyhow::Result;
 use std::cell::Cell;
 use std::sync::mpsc::{self, Receiver};
@@ -41,9 +41,9 @@ impl Desktop {
                 )
             })
             .collect();
-        let open = MenuItem::new(tr("打开主窗口", "Open window"), true, None);
-        let hide = MenuItem::new(tr("最小化到托盘", "Minimize to tray"), true, None);
-        let exit = MenuItem::new(tr("退出", "Exit"), true, None);
+        let open = MenuItem::new(tr(Text::TrayOpenWindow), true, None);
+        let hide = MenuItem::new(tr(Text::CommonMinimizeToTray), true, None);
+        let exit = MenuItem::new(tr(Text::CommonExit), true, None);
         for (_, item) in &modes {
             menu.append(item)?;
         }
@@ -139,7 +139,7 @@ impl Desktop {
         }
         let text = mode
             .map(power_mode)
-            .unwrap_or(tr("模式读取失败", "Power mode unavailable"));
+            .unwrap_or(tr(Text::TrayPowerUnavailable));
         // NIM_MODIFY acknowledges the registered icon even when its overflow rectangle is unavailable.
         self.registered.set(
             self.icon
@@ -158,9 +158,9 @@ impl Desktop {
             item.set_text(power_mode(*mode));
         }
         for (item, text) in self.commands.iter().zip([
-            tr("打开主窗口", "Open window"),
-            tr("最小化到托盘", "Minimize to tray"),
-            tr("退出", "Exit"),
+            tr(Text::TrayOpenWindow),
+            tr(Text::CommonMinimizeToTray),
+            tr(Text::CommonExit),
         ]) {
             item.set_text(text);
         }

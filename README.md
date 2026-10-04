@@ -21,7 +21,9 @@ Lecoo Rust PowerControl is an independent community project. It is not affiliate
 
 ## Features
 
-Compact native Windows controls support system themes, Chinese/English switching, About and a remembered close choice; see the [UI guide](docs/native-ui.md).
+Compact native Windows controls support system themes, eight interface languages, About and a remembered close choice; see the [UI guide](docs/native-ui.md).
+
+**Interface languages:** 简体中文 | English | 繁體中文 | 日本語 | 한국어 | Español | Français | Deutsch. Choose a language in Settings or follow the Windows display language; changes apply immediately and persist across restarts.
 
 - Switch between **Quiet**, **Balanced**, and **Performance** power profiles.
 - Read the active profile back from the hardware after a change.
@@ -74,6 +76,7 @@ Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integrat
 
 ```text
 src/       Rust application, UI, hardware abstraction, and test utility
+resources/ Independent TOML interface resources for all eight languages
 scripts/   Windows build and automated hardware-test scripts
 docs/      Setup, testing, and hardware-interface documentation
 .github/   Windows CI and release workflows

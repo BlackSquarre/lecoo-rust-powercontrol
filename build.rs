@@ -1,4 +1,8 @@
+#[path = "build_support/localization.rs"]
+mod localization;
+
 fn main() {
+    localization::generate();
     // 在 Windows 上嵌入 manifest 文件
     #[cfg(target_os = "windows")]
     {

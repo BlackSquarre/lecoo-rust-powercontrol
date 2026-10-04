@@ -3,11 +3,14 @@
 #[cfg(test)]
 #[path = "icon_tests.rs"]
 mod icon_tests;
+#[cfg(test)]
+#[path = "localization_tests.rs"]
+mod localization_tests;
 use super::native_theme::{system_dark, Brush, Palette};
 use crate::core::PowerMode;
 use crate::platform::windows::icons::{ModeIcon, WindowIcons};
 use anyhow::{bail, Result};
-use lecoo_control_center::localization::text as tr;
+use lecoo_control_center::localization::{language_options, text as tr, Text};
 use std::cell::{Cell, RefCell};
 use windows::{
     core::{w, HSTRING},
@@ -611,7 +614,7 @@ impl NativeWindow {
                 ex,
                 w!("LecooNativeWindow"),
                 &HSTRING::from(if dialog {
-                    tr("关闭窗口", "Close window").to_owned()
+                    tr(Text::CloseTitle).to_owned()
                 } else {
                     "Lecoo Rust PowerControl".to_owned()
                 }),
@@ -638,26 +641,26 @@ impl NativeWindow {
     pub fn new(percent: u8) -> Result<Self> {
         let ui = Self::create(None, false)?;
         for (id, text, kind) in [
-            (300, tr("ACPI 热区温度", "ACPI thermal zone"), Kind::Muted),
+            (300, tr(Text::DashboardThermalZone), Kind::Muted),
             (THERMAL_ZONE, "—", Kind::Number),
-            (302, tr("风扇转速", "Fan speed"), Kind::Muted),
+            (302, tr(Text::DashboardFanSpeed), Kind::Muted),
             (RPM, "—", Kind::Number),
-            (303, tr("内存", "Memory"), Kind::Small),
+            (303, tr(Text::DashboardMemory), Kind::Small),
             (MEMORY, "—", Kind::Small),
-            (304, tr("磁盘", "Disk"), Kind::Small),
+            (304, tr(Text::DashboardDisk), Kind::Small),
             (DISK, "—", Kind::Small),
-            (310, tr("电源模式", "Power mode"), Kind::Heading),
-            (QUIET, tr("安静", "Quiet"), Kind::Radio),
-            (BALANCE, tr("均衡", "Balanced"), Kind::Radio),
-            (PERFORMANCE, tr("性能", "Performance"), Kind::Radio),
-            (311, tr("风扇控制", "Fan control"), Kind::Heading),
-            (AUTO, tr("自动", "Automatic"), Kind::Radio),
-            (MANUAL, tr("手动", "Manual"), Kind::Radio),
-            (MAXIMUM, tr("最大", "Maximum"), Kind::Radio),
+            (310, tr(Text::PowerHeading), Kind::Heading),
+            (QUIET, tr(Text::PowerQuiet), Kind::Radio),
+            (BALANCE, tr(Text::PowerBalanced), Kind::Radio),
+            (PERFORMANCE, tr(Text::PowerPerformance), Kind::Radio),
+            (311, tr(Text::FanHeading), Kind::Heading),
+            (AUTO, tr(Text::FanAutomatic), Kind::Radio),
+            (MANUAL, tr(Text::FanManual), Kind::Radio),
+            (MAXIMUM, tr(Text::FanMaximum), Kind::Radio),
             (PERCENT, "50%", Kind::Number),
             (331, "Lecoo MINI PRO-AHP", Kind::Small),
             (332, "AMD Ryzen 7 8745H", Kind::Small),
-            (SETTINGS, tr("设置", "Settings"), Kind::Button),
+            (SETTINGS, tr(Text::SettingsTitle), Kind::Button),
             (ERROR, "", Kind::Small),
         ] {
             ui.add(id, text, kind)?;
@@ -680,7 +683,7 @@ impl NativeWindow {
         let ui = Self::create(Some(owner), true)?;
         ui.data.borrow_mut().settings = true;
         unsafe {
-            SetWindowTextW(ui.hwnd, &HSTRING::from(tr("设置", "Settings")))?;
+            SetWindowTextW(ui.hwnd, &HSTRING::from(tr(Text::SettingsTitle)))?;
             let dpi = GetDpiForWindow(ui.hwnd).max(96);
             let mut rect = RECT {
                 left: 0,
@@ -706,30 +709,27 @@ impl NativeWindow {
             )?;
         }
         for (id, text, kind) in [
-            (352, tr("启动", "Startup"), Kind::Heading),
-            (STARTUP, tr("登录后启动", "Start at sign-in"), Kind::Check),
-            (353, tr("窗口与语言", "Window & language"), Kind::Heading),
-            (350, tr("关闭窗口时", "When closing"), Kind::Label),
+            (352, tr(Text::SettingsStartupHeading), Kind::Heading),
+            (STARTUP, tr(Text::SettingsStartAtSignIn), Kind::Check),
+            (353, tr(Text::SettingsWindowLanguage), Kind::Heading),
+            (350, tr(Text::SettingsCloseBehaviorLabel), Kind::Label),
             (CLOSE_BEHAVIOR, "", Kind::Combo),
-            (351, tr("语言", "Language"), Kind::Label),
+            (351, tr(Text::SettingsLanguageLabel), Kind::Label),
             (LANGUAGE, "", Kind::Combo),
             (ERROR, "", Kind::Small),
-            (ABOUT, tr("关于…", "About…"), Kind::Button),
+            (ABOUT, tr(Text::SettingsAbout), Kind::Button),
         ] {
             ui.add(id, text, kind)?;
         }
         ui.combo_items(
             CLOSE_BEHAVIOR,
             &[
-                tr("每次询问", "Ask every time"),
-                tr("最小化到托盘", "Minimize to tray"),
-                tr("退出", "Exit"),
+                tr(Text::CloseAsk),
+                tr(Text::CommonMinimizeToTray),
+                tr(Text::CommonExit),
             ],
         );
-        ui.combo_items(
-            LANGUAGE,
-            &[tr("跟随系统", "System default"), "简体中文", "English"],
-        );
+        ui.combo_items(LANGUAGE, &language_options());
         ui.apply_theme();
         ui.layout();
         ui.center_on(owner);
@@ -784,31 +784,19 @@ impl NativeWindow {
             ui.icon_mode(None)?;
             for (id, text, kind) in [
                 (340, "Lecoo Rust PowerControl", Kind::CenterHeading),
-                (
-                    341,
-                    tr("来酷迷你主机控制中心", "Lecoo mini PC control center"),
-                    Kind::Center,
-                ),
+                (341, tr(Text::AboutSubtitle), Kind::Center),
                 (342, "", Kind::Center),
-                (BILIBILI, tr("哔哩哔哩", "Bilibili"), Kind::Link),
-                (PROJECT, tr("项目主页", "Project website"), Kind::Link),
-                (
-                    NOTICES,
-                    tr("第三方声明与版权", "Third-party notices"),
-                    Kind::Link,
-                ),
+                (BILIBILI, tr(Text::AboutBilibili), Kind::Link),
+                (PROJECT, tr(Text::AboutProjectWebsite), Kind::Link),
+                (NOTICES, tr(Text::AboutThirdPartyNotices), Kind::Link),
                 (343, "", Kind::Center),
-                (
-                    344,
-                    tr("保留所有权利。", "All rights reserved."),
-                    Kind::Center,
-                ),
+                (344, tr(Text::AboutRightsReserved), Kind::Center),
             ] {
                 ui.add(id, text, kind)?;
             }
             ui.text(
                 342,
-                format!("{} {}", tr("版本", "Version"), env!("CARGO_PKG_VERSION")),
+                format!("{} {}", tr(Text::AboutVersion), env!("CARGO_PKG_VERSION")),
             );
             ui.refresh_year();
         }
@@ -911,23 +899,11 @@ impl NativeWindow {
     pub fn close_dialog(owner: HWND) -> Result<Self> {
         let ui = Self::create(Some(owner), true)?;
         for (id, text, kind) in [
-            (
-                950,
-                tr("关闭窗口后要执行什么操作？", "What would you like to do?"),
-                Kind::Heading,
-            ),
+            (950, tr(Text::CloseQuestion), Kind::Heading),
             (951, "", Kind::Label),
-            (
-                DIALOG_TRAY,
-                tr("最小化到托盘", "Minimize to tray"),
-                Kind::Button,
-            ),
-            (DIALOG_EXIT, tr("退出", "Exit"), Kind::Button),
-            (
-                REMEMBER,
-                tr("记住我的选择", "Remember my choice"),
-                Kind::Check,
-            ),
+            (DIALOG_TRAY, tr(Text::CommonMinimizeToTray), Kind::Button),
+            (DIALOG_EXIT, tr(Text::CommonExit), Kind::Button),
+            (REMEMBER, tr(Text::CloseRemember), Kind::Check),
         ] {
             ui.add(id, text, kind)?;
         }
@@ -1298,16 +1274,13 @@ impl NativeWindow {
         let settings = self.is_settings();
         let dialog = self.data.borrow().dialog;
         let caption = if self.data.borrow().notices {
-            tr("第三方声明与版权", "Third-party notices")
+            tr(Text::AboutThirdPartyNotices)
         } else if self.data.borrow().about {
-            tr(
-                "关于 Lecoo Rust PowerControl",
-                "About Lecoo Rust PowerControl",
-            )
+            tr(Text::AboutTitle)
         } else if settings {
-            tr("设置", "Settings")
+            tr(Text::SettingsTitle)
         } else if dialog {
-            tr("关闭窗口", "Close window")
+            tr(Text::CloseTitle)
         } else {
             "Lecoo Rust PowerControl"
         };
@@ -1315,62 +1288,53 @@ impl NativeWindow {
             let _ = SetWindowTextW(self.hwnd, &HSTRING::from(caption));
         }
         for (id, text) in [
-            (ABOUT, tr("关于…", "About…")),
-            (
-                341,
-                tr("来酷迷你主机控制中心", "Lecoo mini PC control center"),
-            ),
-            (BILIBILI, tr("哔哩哔哩", "Bilibili")),
-            (PROJECT, tr("项目主页", "Project website")),
-            (NOTICES, tr("第三方声明与版权", "Third-party notices")),
-            (344, tr("保留所有权利。", "All rights reserved.")),
-            (300, tr("ACPI 热区温度", "ACPI thermal zone")),
-            (302, tr("风扇转速", "Fan speed")),
-            (303, tr("内存", "Memory")),
-            (304, tr("磁盘", "Disk")),
-            (310, tr("电源模式", "Power mode")),
-            (QUIET, tr("安静", "Quiet")),
-            (BALANCE, tr("均衡", "Balanced")),
-            (PERFORMANCE, tr("性能", "Performance")),
-            (311, tr("风扇控制", "Fan control")),
-            (AUTO, tr("自动", "Automatic")),
-            (MANUAL, tr("手动", "Manual")),
-            (MAXIMUM, tr("最大", "Maximum")),
-            (SETTINGS, tr("设置", "Settings")),
-            (STARTUP, tr("登录后启动", "Start at sign-in")),
-            (350, tr("关闭窗口时", "When closing")),
-            (352, tr("启动", "Startup")),
-            (353, tr("窗口与语言", "Window & language")),
-            (351, tr("语言", "Language")),
-            (
-                950,
-                tr("关闭窗口后要执行什么操作？", "What would you like to do?"),
-            ),
-            (DIALOG_TRAY, tr("最小化到托盘", "Minimize to tray")),
-            (DIALOG_EXIT, tr("退出", "Exit")),
-            (REMEMBER, tr("记住我的选择", "Remember my choice")),
+            (ABOUT, tr(Text::SettingsAbout)),
+            (341, tr(Text::AboutSubtitle)),
+            (BILIBILI, tr(Text::AboutBilibili)),
+            (PROJECT, tr(Text::AboutProjectWebsite)),
+            (NOTICES, tr(Text::AboutThirdPartyNotices)),
+            (344, tr(Text::AboutRightsReserved)),
+            (300, tr(Text::DashboardThermalZone)),
+            (302, tr(Text::DashboardFanSpeed)),
+            (303, tr(Text::DashboardMemory)),
+            (304, tr(Text::DashboardDisk)),
+            (310, tr(Text::PowerHeading)),
+            (QUIET, tr(Text::PowerQuiet)),
+            (BALANCE, tr(Text::PowerBalanced)),
+            (PERFORMANCE, tr(Text::PowerPerformance)),
+            (311, tr(Text::FanHeading)),
+            (AUTO, tr(Text::FanAutomatic)),
+            (MANUAL, tr(Text::FanManual)),
+            (MAXIMUM, tr(Text::FanMaximum)),
+            (SETTINGS, tr(Text::SettingsTitle)),
+            (STARTUP, tr(Text::SettingsStartAtSignIn)),
+            (350, tr(Text::SettingsCloseBehaviorLabel)),
+            (352, tr(Text::SettingsStartupHeading)),
+            (353, tr(Text::SettingsWindowLanguage)),
+            (351, tr(Text::SettingsLanguageLabel)),
+            (950, tr(Text::CloseQuestion)),
+            (DIALOG_TRAY, tr(Text::CommonMinimizeToTray)),
+            (DIALOG_EXIT, tr(Text::CommonExit)),
+            (REMEMBER, tr(Text::CloseRemember)),
         ] {
             self.text(id, text.into());
         }
         if self.data.borrow().about {
             self.text(
                 342,
-                format!("{} {}", tr("版本", "Version"), env!("CARGO_PKG_VERSION")),
+                format!("{} {}", tr(Text::AboutVersion), env!("CARGO_PKG_VERSION")),
             );
         }
         if settings {
             self.combo_items(
                 CLOSE_BEHAVIOR,
                 &[
-                    tr("每次询问", "Ask every time"),
-                    tr("最小化到托盘", "Minimize to tray"),
-                    tr("退出", "Exit"),
+                    tr(Text::CloseAsk),
+                    tr(Text::CommonMinimizeToTray),
+                    tr(Text::CommonExit),
                 ],
             );
-            self.combo_items(
-                LANGUAGE,
-                &[tr("跟随系统", "System default"), "简体中文", "English"],
-            );
+            self.combo_items(LANGUAGE, &language_options());
         }
     }
     pub fn fan_state(&self, target: u8, ready: bool) {

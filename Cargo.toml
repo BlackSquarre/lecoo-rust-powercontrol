@@ -50,6 +50,10 @@ tray-icon = "0.19"
 
 [build-dependencies]
 winres = "0.1"
+toml = "0.5.11"
+
+[dev-dependencies]
+toml = "0.5.11"
 
 [features]
 legacy-memory-probe = ["dep:eframe"]
