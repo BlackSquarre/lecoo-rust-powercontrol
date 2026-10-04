@@ -23,7 +23,7 @@ cargo test --bin lecoo-control-center --locked native_language_switching_and_tex
 
 此检查在独立测试进程中创建并隐藏模拟窗口，验证八种语言切换、九项语言菜单及当前 DPI 下的控件文案宽度，不调用硬件接口、不修改用户偏好。普通终端可参照 `scripts/test-mode-icons.ps1`，仅为测试进程临时设置 `__COMPAT_LAYER=RunAsInvoker`，运行后恢复环境变量。不同显示缩放、字体回退和语言区域仍应在对应系统上检查。
 
-# v0.0.3 当前验证
+# v0.1.0 验证方法
 
 资源优化的独立检查：`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-resource-usage.ps1 -Measure`。脚本验证全部默认目标的测试、采样调度、异步守护退出、原生启动任务定义、五秒空闲时的事件唤醒和窗口资源释放，并采集可见/隐藏监视器探针。硬件返回值采用模拟对象；仅查询实际系统指标和现有启动任务，不写硬件、偏好或任务。结果保存在 `logs/resource-optimization/`；详情见[资源优化记录](resource-optimization.md)。
 
@@ -35,7 +35,7 @@ cargo test --bin lecoo-control-center --locked native_language_switching_and_tex
 - `scripts/test-features.ps1`：登录任务、单实例、最大风量守护、低目标拒绝、心跳及 EOF 恢复；会临时修改启动任务和风扇。
 - 发布工作流检查安装包静默安装后的文件与原构建相同，并验证卸载；不在构建机运行硬件控制。
 
-此前的 `sensor_probe`、`scripts/test-sensors.ps1` 与 WinRing0 代码已删除。以下为旧版本验证记录，不能视为 v0.0.3 的测试结果。真实登录触发、热区负载响应及 CPU 保护对应关系尚未验证。
+此前的 `sensor_probe`、`scripts/test-sensors.ps1` 与 WinRing0 代码已删除。以下为旧版本验证记录，不能视为 v0.1.0 的测试结果。真实登录触发、热区负载响应及 CPU 保护对应关系尚未验证。
 
 ---
 

@@ -1,4 +1,4 @@
-use super::{ComGuard, WindowsHardwareControl};
+use super::{wake::UiWake, ComGuard, WindowsHardwareControl};
 use crate::{
     core::cooling::{CoolingController, FanTarget},
     platform::HardwareControl,
@@ -61,10 +61,8 @@ pub fn worker() -> Result<()> {
     // Opening a session establishes firmware automatic control; no manual preference is persisted.
     let receipt = control.restore_auto()?;
     emit(format!("AUTO {} {}", receipt.status, receipt.rpm));
-    match control.measured_rpm() {
-        Ok(_) => emit("READY"),
-        Err(error) => emit(format!("UNAVAILABLE {error:#}")),
-    }
+    // restore_auto already validates a nonzero RPM.
+    emit("READY");
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
@@ -82,7 +80,9 @@ pub fn worker() -> Result<()> {
     let mut heartbeat = Instant::now();
     let mut sample_at = Instant::now() - Duration::from_secs(1);
     loop {
-        match receiver.recv_timeout(Duration::from_millis(100)) {
+        // Sleep until the next protection deadline or an incoming command.
+        let remaining = Duration::from_millis(500).saturating_sub(sample_at.elapsed());
+        match receiver.recv_timeout(remaining) {
             Ok(line) if line == "HB" => {
                 heartbeat = Instant::now();
             }
@@ -113,7 +113,12 @@ pub fn worker() -> Result<()> {
                             receipt.rpm
                         ));
                     }
-                    Err(error) => emit(format!("ERROR {error:#}")),
+                    Err(error) => {
+                        emit(format!("ERROR {error:#}"));
+                        if !control.is_armed() && control.target() == FanTarget::Auto {
+                            emit(format!("RECOVERY 101 {error:#}"));
+                        }
+                    }
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -125,19 +130,15 @@ pub fn worker() -> Result<()> {
         if sample_at.elapsed() >= Duration::from_millis(500) {
             sample_at = Instant::now();
             if let Err(error) = control.guard(heartbeat.elapsed()) {
-                emit(format!("RECOVERY {} {error:#}", control.target().encoded()));
+                let target = if control.is_armed() && control.target() == FanTarget::Auto {
+                    255
+                } else {
+                    control.target().encoded()
+                };
+                emit(format!("RECOVERY {target} {error:#}"));
             }
-            match control.measured_rpm() {
-                Ok(rpm) => {
-                    let temp = control
-                        .sample()
-                        .ok()
-                        .map(|(temp, _)| format!("{temp:.3}"))
-                        .unwrap_or_else(|| "NA".to_owned());
-                    emit(format!("DATA {temp} {rpm} {}", control.target().encoded()));
-                }
-                Err(error) => emit(format!("UNAVAILABLE {error:#}")),
-            }
+            // The GUI reads its own visible telemetry. guard consumes exactly one
+            // protection sample; do not repeat RPM/temperature queries for unused DATA.
         }
     }
 }
@@ -147,10 +148,12 @@ pub struct FanClient {
     input: Option<ChildStdin>,
     messages: Receiver<String>,
     heartbeat: Instant,
+    stopping_at: Option<Instant>,
+    stop_warned: bool,
 }
 impl FanClient {
-    pub fn start() -> Result<Self> {
-        let mut child = Command::new(std::env::current_exe()?)
+    pub fn start(wake: UiWake) -> Result<Self> {
+        let child = Command::new(std::env::current_exe()?)
             .arg("--fan-worker")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -158,6 +161,9 @@ impl FanClient {
             .creation_flags(0x08000000)
             .spawn()
             .context("无法启动风扇守护进程")?;
+        Self::from_child(child, wake)
+    }
+    fn from_child(mut child: Child, wake: UiWake) -> Result<Self> {
         let input = child.stdin.take();
         let output = child.stdout.take().context("风扇守护输出不可用")?;
         let (sender, messages) = mpsc::channel();
@@ -169,14 +175,18 @@ impl FanClient {
                 if sender.send(line).is_err() {
                     return;
                 }
+                wake.notify();
             }
             let _ = sender.send("DIED 风扇守护进程已退出".to_owned());
+            wake.notify();
         });
         Ok(Self {
             child,
             input,
             messages,
             heartbeat: Instant::now() - Duration::from_secs(1),
+            stopping_at: None,
+            stop_warned: false,
         })
     }
     pub fn send(&mut self, target: FanTarget) -> Result<()> {
@@ -193,23 +203,51 @@ impl FanClient {
         input.flush()?;
         Ok(())
     }
-    pub fn tick(&mut self) -> Result<Vec<String>> {
-        if self.heartbeat.elapsed() >= Duration::from_millis(500) {
+    pub fn tick(&mut self) -> Result<()> {
+        if self.stopping_at.is_none() && self.heartbeat.elapsed() >= Duration::from_millis(500) {
             self.write("HB")?;
             self.heartbeat = Instant::now();
         }
-        Ok(self.messages.try_iter().collect())
+        Ok(())
+    }
+    pub fn next_message(&self) -> Option<String> {
+        self.messages.try_recv().ok()
+    }
+    pub fn begin_stop(&mut self) -> Result<()> {
+        if self.stopping_at.is_some() {
+            return Ok(());
+        }
+        self.stopping_at = Some(Instant::now());
+        // Close stdin too: even if QUIT fails the worker sees EOF and recovers.
+        let result = self.write("QUIT");
+        self.input.take();
+        result
+    }
+    pub fn poll_stop(&mut self) -> Result<bool> {
+        if let Some(status) = self.child.try_wait()? {
+            if !status.success() {
+                bail!("风扇守护退出失败；自动恢复可能未完成");
+            }
+            return Ok(true);
+        }
+        Ok(false)
+    }
+    pub fn take_stop_timeout(&mut self) -> bool {
+        if !self.stop_warned
+            && self
+                .stopping_at
+                .is_some_and(|at| at.elapsed() >= Duration::from_secs(5))
+        {
+            self.stop_warned = true;
+            return true;
+        }
+        false
     }
     pub fn stop(&mut self) -> Result<()> {
-        // Close stdin too: even if QUIT fails the worker sees EOF and recovers.
-        let _ = self.write("QUIT");
-        self.input.take();
+        let _ = self.begin_stop();
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            if let Some(status) = self.child.try_wait()? {
-                if !status.success() {
-                    bail!("风扇守护退出失败；自动恢复可能未完成");
-                }
+            if self.poll_stop()? {
                 return Ok(());
             }
             if Instant::now() >= deadline {
@@ -222,5 +260,68 @@ impl FanClient {
 impl Drop for FanClient {
     fn drop(&mut self) {
         self.input.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::HWND;
+
+    #[test]
+    fn asynchronous_shutdown_reaps_success_and_detects_failed_exit() {
+        for exit in [0, 7] {
+            let child = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--ignored",
+                    "--exact",
+                    "platform::windows::fan_session::tests::mock_worker_process",
+                    "--nocapture",
+                ])
+                .env("LECOO_TEST_WORKER_EXIT", exit.to_string())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .creation_flags(0x08000000)
+                .spawn()
+                .unwrap();
+            let mut client = FanClient::from_child(child, UiWake::new(HWND::default())).unwrap();
+            client.begin_stop().unwrap();
+            assert!(
+                !client.poll_stop().unwrap(),
+                "stop must return before the delayed worker exits"
+            );
+            client.tick().unwrap(); // No heartbeat write to the intentionally closed pipe.
+            let deadline = Instant::now() + Duration::from_secs(8);
+            loop {
+                match client.poll_stop() {
+                    Ok(true) => {
+                        assert_eq!(exit, 0);
+                        break;
+                    }
+                    Err(_) => {
+                        assert_ne!(exit, 0);
+                        break;
+                    }
+                    Ok(false) => assert!(Instant::now() < deadline, "mock worker did not exit"),
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    }
+    #[test]
+    #[ignore = "child-process entry point for the asynchronous shutdown test"]
+    fn mock_worker_process() {
+        let Ok(exit) = std::env::var("LECOO_TEST_WORKER_EXIT") else {
+            return;
+        };
+        let mut command = String::new();
+        std::io::stdin().read_line(&mut command).unwrap();
+        assert_eq!(command.trim(), "QUIT");
+        std::thread::sleep(Duration::from_millis(1000));
+        let exit: i32 = exit.parse().unwrap();
+        if exit != 0 {
+            std::process::exit(exit);
+        }
     }
 }

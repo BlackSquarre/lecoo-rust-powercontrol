@@ -2,13 +2,14 @@ use super::{
     native::{self, ControllerWindow, NativeWindow},
     preferences::{self, CloseBehavior},
 };
-use crate::core::cooling::{CoolingIo, FanTarget};
+use crate::core::cooling::{CoolingController, FanTarget};
 use crate::core::{PowerMode, SystemMonitor};
 use crate::platform::windows::{
     desktop::{show_error, Action, Desktop},
     fan_session::FanClient,
     instance::Instance,
     startup::{self, StartupStatus},
+    wake::{UiWake, WAKE},
     WindowsHardwareControl,
 };
 use crate::platform::HardwareControl;
@@ -36,17 +37,18 @@ pub struct ControlCenterApp {
     exiting: bool,
     startup_status: Option<StartupStatus>,
     startup_pending: Option<Receiver<anyhow::Result<StartupStatus>>>,
-    startup_checked: Instant,
-    theme_checked: Instant,
+    wake: UiWake,
+    render_dirty: bool,
+    rendered_revision: u64,
     resolved_language: Language,
     slider_pending: Option<(Instant, u8)>,
     pending_fan_target: Option<FanTarget>,
     fan: Option<FanClient>,
     fan_ready: bool,
-    fan_started: bool,
+    fan_stopping: bool,
+    fan_restart: bool,
     fan_target: u8,
     manual_percent: u8,
-    fan_notice: String,
     smoke_report: Option<PathBuf>,
     smoke_started: Instant,
     smoke_phase: u8,
@@ -66,26 +68,28 @@ impl ControlCenterApp {
         smoke_report: Option<PathBuf>,
     ) -> Result<()> {
         let controller = ControllerWindow::new()?;
+        let wake = UiWake::new(controller.0);
         let mut app = Self {
             monitor: SystemMonitor::new(hw),
             last_error: None,
-            desktop: Desktop::new()?,
+            desktop: Desktop::with_wake(Some(wake))?,
             instance,
             close_behavior: preferences::load(),
             exiting: false,
             startup_status: None,
             startup_pending: None,
-            startup_checked: Instant::now(),
-            theme_checked: Instant::now(),
+            wake,
+            render_dirty: true,
+            rendered_revision: 0,
             resolved_language: localization::resolved_language(),
             slider_pending: None,
             pending_fan_target: None,
             fan: None,
             fan_ready: false,
-            fan_started: false,
+            fan_stopping: false,
+            fan_restart: false,
             fan_target: 101,
             manual_percent: 50,
-            fan_notice: String::new(),
             smoke_report,
             smoke_started: Instant::now(),
             smoke_phase: 0,
@@ -97,7 +101,6 @@ impl ControlCenterApp {
             about: None,
             notices: None,
         };
-        app.startup_operation("status");
         if !minimized || !app.desktop.is_available() {
             app.open()?;
         }
@@ -105,16 +108,21 @@ impl ControlCenterApp {
         unsafe {
             let mut message = MSG::default();
             while !app.exiting {
-                let result = GetMessageW(&mut message, None, 0, 0).0;
-                if result == -1 {
-                    return Err(windows::core::Error::from_win32().into());
+                controller.set_interval(app.timer_interval())?;
+                if native::wait_for_activity(app.instance.open_event())? {
+                    app.open_requests += 1;
+                    app.desktop_action(Action::Open);
+                    continue;
                 }
-                if result == 0 {
+                if !PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                    continue;
+                }
+                if message.message == WM_QUIT {
                     break;
                 }
                 if message.hwnd == controller.0 {
                     match message.message {
-                        WM_TIMER => app.tick(),
+                        WM_TIMER | WAKE => app.tick(),
                         native::COMMAND => app.command((message.wParam.0 & 0xffff) as u16),
                         native::CLOSE => app.close_request(HWND(message.wParam.0 as *mut _)),
                         native::HIDE => app.hide(),
@@ -139,8 +147,13 @@ impl ControlCenterApp {
                                 }
                                 ui.layout();
                             }
+                            app.render_dirty = true;
+                            app.render();
                         }
-                        native::THEME => app.refresh_theme(),
+                        native::THEME => {
+                            app.refresh_theme();
+                            app.render();
+                        }
                         native::SLIDER => app.slider(
                             (message.wParam.0 & 0xffff) as u32,
                             HWND(message.lParam.0 as *mut _),
@@ -185,7 +198,9 @@ impl ControlCenterApp {
         {
             active.show();
         }
-        self.startup_operation("status");
+        self.monitor.refresh(true);
+        self.desktop.refresh(self.monitor.snapshot().power_mode);
+        self.render_dirty = true;
         self.refresh_theme();
         self.render();
         Ok(())
@@ -198,6 +213,7 @@ impl ControlCenterApp {
             if self.window.take().is_some() {
                 self.windows_destroyed += 1;
             }
+            self.monitor.refresh(false);
         } else {
             self.last_error = Some("托盘图标不可用，保留主窗口".to_owned());
             let _ = self.open();
@@ -379,9 +395,12 @@ impl ControlCenterApp {
             native::MANUAL => self.submit_manual(self.manual_percent),
             native::RECONNECT => {
                 self.slider_pending = None;
-                self.stop_fan();
-                self.fan_started = false;
-                self.request_fan(FanTarget::Auto);
+                if self.fan.is_some() {
+                    self.fan_restart = true;
+                    self.begin_fan_stop();
+                } else {
+                    self.request_fan(FanTarget::Auto);
+                }
             }
             native::STARTUP if self.startup_pending.is_none() && self.startup_status.is_some() => {
                 self.startup_operation(if self.startup_status == Some(StartupStatus::Enabled) {
@@ -431,6 +450,7 @@ impl ControlCenterApp {
             native::DIALOG_CANCEL | 2 => self.cancel_dialog(),
             _ => {}
         }
+        self.render_dirty = true;
         self.render();
     }
     fn slider(&mut self, code: u32, source: HWND) {
@@ -450,6 +470,7 @@ impl ControlCenterApp {
         } else {
             self.slider_pending = Some((Instant::now(), self.manual_percent));
         }
+        self.render_dirty = true;
         self.render();
     }
     fn submit_manual(&mut self, percent: u8) {
@@ -460,7 +481,7 @@ impl ControlCenterApp {
         }
         match FanTarget::percent(percent) {
             Ok(target) => {
-                if !self.fan_started
+                if self.fan.is_none()
                     || self.fan_target != percent
                     || self.pending_fan_target.is_some()
                 {
@@ -489,50 +510,54 @@ impl ControlCenterApp {
             Action::Exit => self.exiting = true,
         }
     }
-    fn refresh_theme(&self) {
+    fn refresh_theme(&mut self) {
         for ui in [&self.window, &self.dialog, &self.about, &self.notices]
             .into_iter()
             .flatten()
         {
             ui.refresh_theme();
         }
+        if localization::resolved_language() != self.resolved_language {
+            self.resolved_language = localization::resolved_language();
+            for ui in [&self.window, &self.dialog, &self.about, &self.notices]
+                .into_iter()
+                .flatten()
+            {
+                ui.retranslate();
+            }
+            self.desktop.retranslate();
+        }
+        self.render_dirty = true;
+    }
+    fn timer_interval(&self) -> u32 {
+        if self.fan.is_some() || self.slider_pending.is_some() || self.smoke_report.is_some() {
+            250
+        } else if self.window.is_some() {
+            1000
+        } else {
+            5000
+        }
     }
     fn tick(&mut self) {
-        if let Some(result) = self
-            .startup_pending
-            .as_ref()
-            .and_then(|pending| pending.try_recv().ok())
+        if let Some(result) =
+            self.startup_pending
+                .as_ref()
+                .and_then(|pending| match pending.try_recv() {
+                    Ok(result) => Some(result),
+                    Err(mpsc::TryRecvError::Empty) => None,
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        Some(Err(anyhow::anyhow!("启动状态查询意外中断")))
+                    }
+                })
         {
             self.startup_pending = None;
-            self.startup_checked = Instant::now();
+            self.render_dirty = true;
             match result {
                 Ok(status) => self.startup_status = Some(status),
                 Err(error) => self.last_error = Some(format!("登录启动操作失败: {error:#}")),
             }
         }
-        if self.window.is_some() && self.startup_checked.elapsed() >= Duration::from_secs(30) {
-            self.startup_operation("status");
-            self.startup_checked = Instant::now();
-        }
-        if self.theme_checked.elapsed() >= Duration::from_secs(2) {
-            self.refresh_theme();
-            if localization::resolved_language() != self.resolved_language {
-                self.resolved_language = localization::resolved_language();
-                for ui in [&self.window, &self.dialog, &self.about, &self.notices]
-                    .into_iter()
-                    .flatten()
-                {
-                    ui.retranslate();
-                }
-                self.desktop.retranslate();
-            }
-            self.theme_checked = Instant::now();
-        }
-        if self.instance.take_open_request() {
-            self.open_requests += 1;
-            self.desktop_action(Action::Open);
-        }
-        for action in self.desktop.actions() {
+        while let Some(action) = self.desktop.next_action() {
             self.desktop_action(action);
         }
         if self
@@ -543,8 +568,8 @@ impl ControlCenterApp {
             self.submit_manual(value);
         }
         self.fan_tick();
-        let snapshot = self.monitor.update();
-        self.desktop.refresh(snapshot.power_mode);
+        self.monitor.refresh(self.window.is_some());
+        self.desktop.refresh(self.monitor.snapshot().power_mode);
         if self.window.is_none() && !self.desktop.is_available() {
             self.last_error = Some("托盘连接失效，已重新打开主窗口".to_owned());
             self.desktop_action(Action::Open);
@@ -556,8 +581,12 @@ impl ControlCenterApp {
         if let Some(ui) = &self.about {
             ui.refresh_year();
         }
-        let snapshot = self.monitor.update();
-        self.desktop.refresh(snapshot.power_mode);
+        if !self.render_dirty && self.rendered_revision == self.monitor.revision() {
+            return;
+        }
+        self.render_dirty = false;
+        self.rendered_revision = self.monitor.revision();
+        let snapshot = self.monitor.snapshot();
         for ui in [&self.window, &self.dialog, &self.about, &self.notices]
             .into_iter()
             .flatten()
@@ -584,24 +613,32 @@ impl ControlCenterApp {
                 .unwrap_or_else(|| tr(Text::CommonUnavailable).into()),
         );
         let gb = |v: u64| v as f64 / 1073741824.0;
-        ui.text(
-            native::MEMORY,
-            format!(
-                "{:.0}% · {:.1}/{:.1} GiB",
-                snapshot.mem_usage,
-                gb(snapshot.mem_used),
-                gb(snapshot.mem_total)
-            ),
-        );
-        ui.text(
-            native::DISK,
-            format!(
-                "{:.0}% · {:.0}/{:.0} GiB",
-                snapshot.disk_usage,
-                gb(snapshot.disk_used),
-                gb(snapshot.disk_total)
-            ),
-        );
+        if snapshot.mem_total == 0 {
+            ui.text(native::MEMORY, tr(Text::CommonUnavailable));
+        } else {
+            ui.text(
+                native::MEMORY,
+                format!(
+                    "{:.0}% · {:.1}/{:.1} GiB",
+                    snapshot.mem_usage,
+                    gb(snapshot.mem_used),
+                    gb(snapshot.mem_total)
+                ),
+            );
+        }
+        if snapshot.disk_total == 0 {
+            ui.text(native::DISK, tr(Text::CommonUnavailable));
+        } else {
+            ui.text(
+                native::DISK,
+                format!(
+                    "{:.0}% · {:.0}/{:.0} GiB",
+                    snapshot.disk_usage,
+                    gb(snapshot.disk_used),
+                    gb(snapshot.disk_total)
+                ),
+            );
+        }
         ui.progress(native::MEMORY_BAR, snapshot.mem_usage);
         ui.progress(native::DISK_BAR, snapshot.disk_usage);
         ui.mode(snapshot.power_mode.map(|m| m as u8));
@@ -615,11 +652,11 @@ impl ControlCenterApp {
         ui.check(native::AUTO, self.fan_target == 101);
         ui.check(native::MAXIMUM, self.fan_target == 100);
         ui.check(native::MANUAL, (35..100).contains(&self.fan_target));
-        let adjustable = !self.fan_started || self.fan_ready;
+        let adjustable = !self.fan_stopping && (self.fan.is_none() || self.fan_ready);
         ui.enable(native::MANUAL, false);
         ui.enable(native::MAXIMUM, adjustable);
         ui.enable(native::TARGET, false);
-        ui.text(native::PERCENT, "—".to_owned());
+        ui.text(native::PERCENT, "—");
         ui.fan_state(self.fan_target, self.fan_ready);
         if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
             dialog.check(
@@ -648,7 +685,7 @@ impl ControlCenterApp {
             .map(|error| localization::user_error(error))
             .unwrap_or_default();
         if let Some(dialog) = self.dialog.as_ref().filter(|ui| ui.is_settings()) {
-            dialog.text(native::ERROR, message.clone());
+            dialog.text(native::ERROR, &message);
         }
         ui.text(native::ERROR, message);
     }
@@ -687,7 +724,7 @@ impl ControlCenterApp {
             .is_some_and(|ui| unsafe { IsWindowVisible(ui.hwnd).as_bool() });
         let mode = self
             .monitor
-            .update()
+            .snapshot()
             .power_mode
             .map(|m| m as u8)
             .unwrap_or(255);
@@ -700,21 +737,21 @@ impl ControlCenterApp {
         }
     }
     fn set_power_mode(&mut self, mode: PowerMode) {
-        if let Ok(mut hw) = self.monitor.get_hw_control().lock() {
-            match hw.set_power_mode(mode) {
-                Ok(()) => {
-                    self.last_error = None;
-                }
-                Err(e) if e.to_string().contains("管理员") || e.to_string().contains("权限") =>
-                {
-                    self.last_error = Some("需要管理员权限才能切换性能模式".to_string());
-                }
-                Err(e) => {
-                    self.last_error = Some(format!("操作失败: {:#}", e));
-                }
+        match self.monitor.hardware_mut().set_power_mode(mode) {
+            Ok(()) => {
+                self.last_error = None;
+            }
+            Err(e) if e.to_string().contains("管理员") || e.to_string().contains("权限") => {
+                self.last_error = Some("需要管理员权限才能切换性能模式".to_string());
+            }
+            Err(e) => {
+                self.last_error = Some(format!("操作失败: {:#}", e));
             }
         }
         self.monitor.invalidate();
+        self.render_dirty = true;
+        self.monitor.refresh(self.window.is_some());
+        self.desktop.refresh(self.monitor.snapshot().power_mode);
     }
 
     fn startup_operation(&mut self, operation: &'static str) {
@@ -723,21 +760,22 @@ impl ControlCenterApp {
         }
         let (sender, receiver) = mpsc::channel();
         self.startup_pending = Some(receiver);
+        let wake = self.wake;
         std::thread::spawn(move || {
             let result = std::env::current_exe()
                 .map_err(anyhow::Error::from)
                 .and_then(|exe| startup::configure(operation, &exe));
             let _ = sender.send(result);
+            wake.notify();
         });
     }
     fn request_fan(&mut self, target: FanTarget) {
-        if target == FanTarget::Auto && self.fan_started && !self.fan_ready {
-            self.stop_fan();
-            self.fan_started = false;
+        if self.fan_stopping {
+            self.last_error = Some("风扇恢复仍在后台进行，请稍后重试".to_owned());
+            return;
         }
-        if self.fan.is_none() && !self.fan_started {
-            self.fan_started = true;
-            match FanClient::start() {
+        if self.fan.is_none() {
+            match FanClient::start(self.wake) {
                 Ok(fan) => self.fan = Some(fan),
                 Err(error) => {
                     self.last_error = Some(format!("风扇连接失败: {error:#}"));
@@ -746,7 +784,7 @@ impl ControlCenterApp {
             }
         }
         if let Some(fan) = &mut self.fan {
-            if self.fan_ready || target == FanTarget::Auto {
+            if self.fan_ready {
                 self.pending_fan_target = None;
                 if let Err(error) = fan.send(target) {
                     self.last_error = Some(format!("风扇请求失败: {error:#}"));
@@ -764,12 +802,24 @@ impl ControlCenterApp {
             }
         }
         self.fan_ready = false;
+        self.fan_stopping = false;
         self.pending_fan_target = None;
+    }
+    fn begin_fan_stop(&mut self) {
+        self.pending_fan_target = None;
+        self.fan_stopping = self.fan.is_some();
+        self.fan_ready = false;
+        if let Some(fan) = &mut self.fan {
+            if let Err(error) = fan.begin_stop() {
+                self.last_error = Some(format!("风扇恢复请求失败: {error:#}"));
+            }
+        }
+        self.render_dirty = true;
     }
     fn recover_fan(&mut self, reason: &str) {
         // A worker crash closes the pipe; the GUI makes an independent best-effort recovery.
         let recovery =
-            WindowsHardwareControl::new().and_then(|mut hw| hw.write_fan(FanTarget::Auto));
+            WindowsHardwareControl::new().and_then(|hw| CoolingController::new(hw).restore_auto());
         self.last_error = Some(format!("{reason}；备用自动恢复: {recovery:?}"));
         self.fan_ready = false;
         if recovery.is_ok() {
@@ -777,59 +827,79 @@ impl ControlCenterApp {
         }
     }
     fn fan_tick(&mut self) {
-        let result = self.fan.as_mut().map(FanClient::tick);
-        match result {
-            Some(Ok(lines)) => {
-                for line in lines {
-                    let fields: Vec<_> = line.split_whitespace().collect();
-                    match fields.first().copied() {
-                        Some("READY") => {
-                            self.fan_ready = true;
-                            self.fan_notice = "连接正常".to_owned();
-                            if let Some(target) = self.pending_fan_target.take() {
-                                self.request_fan(target);
-                            }
-                        }
-                        Some("DATA") => {
-                            if let Some(target) = fields.get(3).and_then(|v| v.parse().ok()) {
-                                self.fan_target = target;
-                            }
-                        }
-                        Some("OK") => {
-                            self.fan_target =
-                                fields.get(1).and_then(|v| v.parse().ok()).unwrap_or(101);
-                            self.fan_notice = format!(
-                                "固件响应 {}；实测 {} RPM",
-                                fields.get(2).unwrap_or(&"?"),
-                                fields.get(3).unwrap_or(&"?")
-                            );
-                            self.last_error = None;
-                        }
-                        Some("AUTO") => self.fan_target = 101,
-                        Some("UNAVAILABLE") => {
-                            self.fan_ready = false;
-                            self.pending_fan_target = None;
-                            self.fan_notice = line;
-                        }
-                        Some("RECOVERY") => {
-                            self.fan_target =
-                                fields.get(1).and_then(|v| v.parse().ok()).unwrap_or(101);
-                            self.last_error = Some(line);
-                        }
-                        Some("ERROR") => self.last_error = Some(line),
-                        Some("DIED") => {
-                            self.fan.take();
-                            self.recover_fan(&line);
-                        }
-                        _ => {}
+        // Drain acknowledgements before heartbeat writes: a successful AUTO can
+        // already have started shutdown, so a closed pipe is then expected.
+        while let Some(line) = self.fan.as_ref().and_then(FanClient::next_message) {
+            let mut fields = line.split_whitespace();
+            match fields.next() {
+                Some("READY") => {
+                    self.fan_ready = true;
+                    if let Some(target) = self.pending_fan_target.take() {
+                        self.request_fan(target);
                     }
                 }
+                Some("DATA") => {
+                    if let Some(target) = fields.nth(2).and_then(|v| v.parse().ok()) {
+                        self.fan_target = target;
+                    }
+                }
+                Some("OK") => {
+                    self.fan_target = fields.next().and_then(|v| v.parse().ok()).unwrap_or(101);
+                    self.last_error = None;
+                    if self.fan_target == 101 {
+                        self.begin_fan_stop();
+                    }
+                }
+                Some("AUTO") => self.fan_target = 101,
+                Some("UNAVAILABLE") => {
+                    self.fan_ready = false;
+                    self.pending_fan_target = None;
+                    self.last_error = Some(line);
+                }
+                Some("RECOVERY") => {
+                    self.fan_target = fields.next().and_then(|v| v.parse().ok()).unwrap_or(101);
+                    self.last_error = Some(line);
+                    if self.fan_target == 101 {
+                        self.begin_fan_stop();
+                    }
+                }
+                Some("ERROR") => self.last_error = Some(line),
+                Some("DIED") if !self.fan_stopping => {
+                    self.fan.take();
+                    self.recover_fan(&line);
+                }
+                _ => {}
             }
-            Some(Err(error)) => {
-                self.stop_fan();
-                self.recover_fan(&format!("风扇通信中断: {error:#}"));
+            self.render_dirty = true;
+        }
+        if self.fan_stopping {
+            match self.fan.as_mut().map(FanClient::poll_stop) {
+                Some(Ok(true)) => {
+                    self.fan.take();
+                    self.fan_stopping = false;
+                    self.fan_target = 101;
+                    self.render_dirty = true;
+                    if std::mem::take(&mut self.fan_restart) {
+                        self.request_fan(FanTarget::Auto);
+                    }
+                }
+                Some(Err(error)) => {
+                    self.fan.take();
+                    self.fan_stopping = false;
+                    self.fan_restart = false;
+                    self.recover_fan(&format!("{error:#}"));
+                    self.render_dirty = true;
+                }
+                _ => {}
             }
-            None => {}
+            if self.fan.as_mut().is_some_and(FanClient::take_stop_timeout) {
+                self.last_error = Some("风扇恢复仍在后台进行，请检查散热状态".to_owned());
+                self.render_dirty = true;
+            }
+        } else if let Some(Err(error)) = self.fan.as_mut().map(FanClient::tick) {
+            self.last_error = Some(format!("风扇通信中断: {error:#}"));
+            self.begin_fan_stop();
+            self.render_dirty = true;
         }
     }
 }

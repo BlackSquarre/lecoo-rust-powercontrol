@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use windows::Win32::System::Com::*;
+use windows::Win32::{Foundation::RPC_E_TOO_LATE, System::Com::*};
 
 /// COM 初始化守卫（RAII）
 pub struct ComGuard;
@@ -7,12 +7,13 @@ pub struct ComGuard;
 impl ComGuard {
     pub fn new() -> Result<Self> {
         unsafe {
-            // 使用单线程模式以兼容 winit/egui
+            // Keep UI and background operations in their own COM apartments.
             let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
 
             if hr.is_err() {
                 bail!("COM 初始化失败: {:?}", hr);
             }
+            let guard = Self;
 
             // 设置进程安全级别
             let hr = CoInitializeSecurity(
@@ -27,12 +28,14 @@ impl ComGuard {
                 None,
             );
 
-            if hr.is_err() {
-                bail!("COM 安全初始化失败: {:?}", hr);
+            // Security is process-wide; another initialized apartment may own it.
+            if let Err(error) = hr {
+                if error.code() != RPC_E_TOO_LATE {
+                    bail!("COM 安全初始化失败: {:?}", error);
+                }
             }
+            Ok(guard)
         }
-
-        Ok(ComGuard)
     }
 }
 

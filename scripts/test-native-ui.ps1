@@ -87,7 +87,7 @@ try{
  $taskInstance=Get-CimInstance -Namespace root/WMI -ClassName PowerSwitchInterface | Where-Object InstanceName -eq 'ACPI\PNP0C14\IP3POWERSWITCH_0'
  $taskOriginalMode=[int](Invoke-CimMethod -InputObject $taskInstance -MethodName GetPowerMode).CurrentPowerMode
  New-Item -ItemType Directory -Path (Split-Path -Parent $taskPreference) -Force | Out-Null
- [IO.File]::WriteAllText($taskPreference,"close_behavior=ask`nlanguage=zh-CN`n")
+ [IO.File]::WriteAllText($taskPreference,"close_behavior=ask`nlanguage=zh-Hans`n")
  $taskProcess=Start-Process -FilePath $Executable -WindowStyle Normal -PassThru
  Start-Sleep -Seconds 4;$taskWindow=MainWindow;if(!$taskWindow){throw 'Native UI did not open'}
  $taskChildren=@([NativeUiTest]::Children($taskWindow));$taskCaptions=@($taskChildren | ForEach-Object {[NativeUiTest]::Text($_)})
@@ -128,7 +128,7 @@ try{
   if([NativeUiTest]::Text($settings) -ne $expected){throw 'Settings title not localized'}
   $name=if($english){'english'}else{'chinese'};Capture $taskWindow ($name+'-dark');Capture $settings ($name+'-settings-dark')
   Click $settings 143;$about=AboutWindow;if(!$about){throw 'About window did not open'}
-  $expected=if($english){'Version 0.0.3'}else{'版本 0.0.3'}
+  $expected=if($english){'Version 0.1.0'}else{'版本 0.1.0'}
   if((Caption $about 342) -ne $expected){throw 'About version not localized'}
   if((Caption $about 343) -notmatch ('© '+(Get-Date).Year+' ')){throw 'About copyright year is not current'}
   Capture $about ($name+'-about-dark')

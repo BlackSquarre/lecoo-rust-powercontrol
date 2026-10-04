@@ -1,4 +1,5 @@
 use super::icons::ModeIcon;
+use super::wake::UiWake;
 use crate::core::PowerMode;
 use crate::localization::{power_mode, text as tr, Text};
 use anyhow::Result;
@@ -31,6 +32,9 @@ pub struct Desktop {
 }
 impl Desktop {
     pub fn new() -> Result<Self> {
+        Self::with_wake(None)
+    }
+    pub fn with_wake(wake: Option<UiWake>) -> Result<Self> {
         let menu = Menu::new();
         let modes: Vec<_> = [PowerMode::Quiet, PowerMode::Balance, PowerMode::Performance]
             .into_iter()
@@ -85,6 +89,9 @@ impl Desktop {
             };
             if let Some(action) = action {
                 let _ = menu_sender.send(action);
+                if let Some(wake) = wake {
+                    wake.notify();
+                }
             }
         }));
         TrayIconEvent::set_event_handler(Some(move |event| {
@@ -96,6 +103,9 @@ impl Desktop {
                 }
             ) {
                 let _ = sender.send(Action::Open);
+                if let Some(wake) = wake {
+                    wake.notify();
+                }
             }
         }));
         Ok(Self {
@@ -110,8 +120,8 @@ impl Desktop {
             last_refresh: Cell::new(Instant::now()),
         })
     }
-    pub fn actions(&self) -> Vec<Action> {
-        self.receiver.try_iter().collect()
+    pub fn next_action(&self) -> Option<Action> {
+        self.receiver.try_recv().ok()
     }
     pub fn refresh(&self, mode: Option<PowerMode>) {
         let changed = self.current_mode.get() != Some(mode);
@@ -164,6 +174,12 @@ impl Desktop {
         ]) {
             item.set_text(text);
         }
+    }
+}
+impl Drop for Desktop {
+    fn drop(&mut self) {
+        MenuEvent::set_event_handler(None::<fn(MenuEvent)>);
+        TrayIconEvent::set_event_handler(None::<fn(TrayIconEvent)>);
     }
 }
 pub fn show_error(message: &str) {

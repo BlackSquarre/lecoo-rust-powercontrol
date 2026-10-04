@@ -162,3 +162,54 @@ fn native_mode_icons_and_resource_lifetime() {
     }
     println!("Four mode colors, all owned windows, stable refresh handles, 12 release cycles and 100/125/150/200% DPI passed; no hardware writes.");
 }
+
+#[test]
+#[ignore = "requires an interactive Windows desktop; no hardware or preference changes"]
+fn events_wake_idle_controller_without_waiting_for_timer() {
+    use crate::platform::windows::wake::{UiWake, WAKE};
+    use std::time::{Duration, Instant};
+    use windows::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{CreateEventW, SetEvent},
+    };
+    let controller = ControllerWindow::new().unwrap();
+    controller.set_interval(5000).unwrap();
+    let event = unsafe { CreateEventW(None, false, false, None) }.unwrap();
+    unsafe {
+        let mut message = MSG::default();
+        while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+            DispatchMessageW(&message);
+        }
+    }
+    let wake = UiWake::new(controller.0);
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        wake.notify();
+    });
+    let at = Instant::now();
+    assert!(!wait_for_activity(event).unwrap());
+    sender.join().unwrap();
+    let posted_ms = at.elapsed().as_millis();
+    assert!(posted_ms < 2000, "posted result waited for idle timer");
+    unsafe {
+        let mut message = MSG::default();
+        assert!(PeekMessageW(&mut message, None, WAKE, WAKE, PM_REMOVE).as_bool());
+        assert_eq!(message.hwnd, controller.0);
+    }
+    let event_value = event.0 as usize;
+    let sender = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        unsafe {
+            SetEvent(HANDLE(event_value as *mut _)).unwrap();
+        }
+    });
+    let at = Instant::now();
+    assert!(wait_for_activity(event).unwrap());
+    sender.join().unwrap();
+    let event_ms = at.elapsed().as_millis();
+    unsafe {
+        CloseHandle(event).unwrap();
+    }
+    assert!(event_ms < 2000, "second launch waited for idle timer");
+    println!("Idle wake latency: posted={posted_ms}ms, event={event_ms}ms; timer=5000ms");
+}

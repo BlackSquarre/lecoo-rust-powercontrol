@@ -1,6 +1,6 @@
 # UTF-8 interface resources. Keys must match en.toml.
 [language]
-code = "zh-CN"
+code = "zh-Hans"
 native_name = "简体中文"
 
 [messages]

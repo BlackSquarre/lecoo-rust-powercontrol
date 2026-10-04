@@ -1,12 +1,14 @@
 # Windows UI and memory usage
 
-The current source replaces the eframe/OpenGL UI with Win32 windows and controls. This interface is included in v0.0.3.
+The resource scheduling, native system metrics, on-demand startup query and fan-worker lifetime changes are documented in [resource optimization](resource-optimization.md), including isolated measurements and verification limits.
+
+The current source replaces the eframe/OpenGL UI with Win32 windows and controls. This interface was introduced in v0.0.3 and remains in v0.1.0.
 
 The layout follows the approved compact C revision, at 400 × 520 logical pixels by default. A two-by-two grid shows ACPI thermal-zone temperature, fan RPM, memory usage and disk usage. Power and fan controls sit underneath; quiet is green, balanced blue, performance red. The device footer contains the sole Settings gear. The endpoint/caption row and request/firmware/reconnect/version/connection information have been removed from the main dashboard. Settings opens an owned native window with sign-in startup, close behavior, language and About. Errors appear only when needed.
 
 Temperature is read through Windows ACPI thermal-zone WMI. Package power and all WinRing0 access have been removed. An unavailable reading is displayed as Unavailable; the zone has not been validated as a CPU package sensor.
 
-The language menu offers System default, 简体中文, English, 繁體中文, 日本語, 한국어, Español, Français and Deutsch. System default follows the Windows display language, including regional Spanish, French and German variants. Taiwan, Hong Kong and Macao use Traditional Chinese; mainland China and Singapore use Simplified Chinese. Unsupported display languages fall back to English. Explicit language choices persist beside the close preference and update the dashboard, settings, About, close prompt, error messages and tray menu immediately. Theme remains independent of language and follows the Windows app light/dark setting. See [terminology and localization](localization.md).
+The language menu offers System default, 简体中文, English, 繁體中文, 日本語, 한국어, Español, Français and Deutsch. System default follows the Windows display language and selects the matching Chinese script or supported Spanish, French and German translation. Unsupported display languages fall back to English. Explicit language choices persist beside the close preference and update the dashboard, settings, About, close prompt, error messages and tray menu immediately. Theme remains independent of language and follows the Windows app light/dark setting. See [terminology and localization](localization.md).
 
 The settings window uses a compact 380 × 312 logical-pixel layout, slightly narrower than the main window. Startup and Window & language have separate cards, with 16-pixel outer margins, 12-pixel card padding and a 12-pixel gap. Close behavior and language share aligned label and field columns in two adjacent rows. The startup status line, reset action, application-information label and startup parenthetical have been removed. Select Ask every time in the close-behavior menu to restore the close prompt. About sits directly below the cards, followed by an error area that only displays failures. The layout scales with Windows DPI and uses the existing system fonts and theme palette.
 

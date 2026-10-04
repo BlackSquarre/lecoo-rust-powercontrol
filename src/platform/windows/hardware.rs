@@ -1,7 +1,10 @@
 use crate::core::types::{is_valid_fan_reading, is_valid_temperature, FeatureKey, PowerMode};
 use crate::platform::traits::HardwareControl;
 use anyhow::{bail, Context, Result};
-use std::time::{Duration, Instant};
+use std::{
+    cell::RefCell,
+    time::{Duration, Instant},
+};
 use windows::{
     core::*, Win32::Foundation::*, Win32::Security::*, Win32::System::Com::*, Win32::System::Wmi::*,
 };
@@ -23,11 +26,15 @@ fn cpu_brand() -> String {
         if __cpuid(0x80000000).eax < 0x80000004 {
             return String::new();
         }
-        let mut bytes = Vec::with_capacity(48);
+        let mut bytes = [0u8; 48];
         for leaf in 0x80000002..=0x80000004 {
             let result = __cpuid(leaf);
-            for value in [result.eax, result.ebx, result.ecx, result.edx] {
-                bytes.extend_from_slice(&value.to_le_bytes());
+            for (index, value) in [result.eax, result.ebx, result.ecx, result.edx]
+                .into_iter()
+                .enumerate()
+            {
+                let offset = (leaf - 0x80000002) as usize * 16 + index * 4;
+                bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
             }
         }
         String::from_utf8_lossy(&bytes)
@@ -42,6 +49,9 @@ fn cpu_brand() -> String {
 pub struct WindowsHardwareControl {
     wmi_service: IWbemServices,
     instance_path: BSTR,
+    // Fixed private method set; never cache mutable argument instances.
+    input_signatures: RefCell<Vec<(&'static str, IWbemClassObject)>>,
+    thermal_path: RefCell<Option<BSTR>>,
 }
 
 // COM 对象只在初始化它的 GUI 线程上使用。
@@ -90,6 +100,8 @@ impl WindowsHardwareControl {
             Ok(Self {
                 wmi_service,
                 instance_path,
+                input_signatures: RefCell::new(Vec::new()),
+                thermal_path: RefCell::new(None),
             })
         }
     }
@@ -113,13 +125,13 @@ impl WindowsHardwareControl {
                 Some(&mut out_params),
                 None,
             )
-            .context(format!("调用 WMI 方法 {} 失败", method_name))?;
+            .with_context(|| format!("调用 WMI 方法 {} 失败", method_name))?;
 
         let out_params =
             out_params.ok_or_else(|| anyhow::anyhow!("WMI 方法 {} 未返回结果", method_name))?;
         let mut return_value = VARIANT::default();
         // 此 ACPI 提供程序的原生 COM 输出可能省略 ReturnValue，CIM 会补出该字段。
-        match out_params.Get(&BSTR::from("ReturnValue"), 0, &mut return_value, None, None) {
+        match out_params.Get(w!("ReturnValue"), 0, &mut return_value, None, None) {
             Ok(()) => {
                 if !bool::try_from(&return_value).context("转换 WMI ReturnValue 失败")? {
                     bail!("WMI 方法 {} 返回失败", method_name);
@@ -136,19 +148,34 @@ impl WindowsHardwareControl {
     unsafe fn get_u32_from_result(
         &self,
         result: &IWbemClassObject,
-        prop_name: &str,
+        prop_name: PCWSTR,
     ) -> Result<u32> {
-        let prop_bstr = BSTR::from(prop_name);
         let mut variant = VARIANT::default();
 
         result
-            .Get(&prop_bstr, 0, &mut variant, None, None)
-            .context(format!("获取属性 {} 失败", prop_name))?;
+            .Get(prop_name, 0, &mut variant, None, None)
+            .with_context(|| {
+                format!(
+                    "获取属性 {} 失败",
+                    prop_name.to_string().unwrap_or_default()
+                )
+            })?;
 
-        u32::try_from(&variant).context(format!("转换属性 {} 为 u32 失败", prop_name))
+        u32::try_from(&variant).with_context(|| {
+            format!(
+                "转换属性 {} 为 u32 失败",
+                prop_name.to_string().unwrap_or_default()
+            )
+        })
     }
 
-    unsafe fn create_in_params(&self, method_name: &str) -> Result<IWbemClassObject> {
+    unsafe fn create_in_params(&self, method_name: &'static str) -> Result<IWbemClassObject> {
+        {
+            let signatures = self.input_signatures.borrow();
+            if let Some((_, signature)) = signatures.iter().find(|(name, _)| *name == method_name) {
+                return signature.SpawnInstance(0).context("创建输入参数实例失败");
+            }
+        }
         let class_bstr = BSTR::from(WMI_CLASS);
 
         let mut class_obj: Option<IWbemClassObject> = None;
@@ -171,25 +198,32 @@ impl WindowsHardwareControl {
 
         class_obj
             .GetMethod(&method_bstr, 0, &mut in_signature, &mut out_signature)
-            .context(format!("获取方法 {} 的输入参数失败", method_name))?;
+            .with_context(|| format!("获取方法 {} 的输入参数失败", method_name))?;
 
         let in_signature = in_signature.ok_or_else(|| anyhow::anyhow!("方法签名为空"))?;
 
         let in_params_instance = in_signature
             .SpawnInstance(0)
             .context("创建输入参数实例失败")?;
+        self.input_signatures
+            .borrow_mut()
+            .push((method_name, in_signature));
 
         Ok(in_params_instance)
     }
 
-    unsafe fn set_u8_param(&self, params: &IWbemClassObject, name: &str, value: u8) -> Result<()> {
-        let prop_bstr = BSTR::from(name);
-
+    unsafe fn set_u8_param(
+        &self,
+        params: &IWbemClassObject,
+        name: PCWSTR,
+        value: u8,
+    ) -> Result<()> {
         let variant = VARIANT::from(value);
 
-        let result = params.Put(&prop_bstr, 0, &variant, 0);
+        let result = params.Put(name, 0, &variant, 0);
 
-        result.context(format!("设置参数 {} 失败", name))?;
+        result
+            .with_context(|| format!("设置参数 {} 失败", name.to_string().unwrap_or_default()))?;
 
         Ok(())
     }
@@ -199,7 +233,7 @@ impl HardwareControl for WindowsHardwareControl {
     fn get_power_mode(&self) -> Result<PowerMode> {
         unsafe {
             let result = self.invoke_method("GetPowerMode", None)?;
-            let mode_value = self.get_u32_from_result(&result, "CurrentPowerMode")?;
+            let mode_value = self.get_u32_from_result(&result, w!("CurrentPowerMode"))?;
 
             PowerMode::from_u32(mode_value)
                 .ok_or_else(|| anyhow::anyhow!("无效的性能模式值: {}", mode_value))
@@ -212,10 +246,10 @@ impl HardwareControl for WindowsHardwareControl {
         }
         unsafe {
             let in_params = self.create_in_params("SetPowerMode")?;
-            self.set_u8_param(&in_params, "PowerMode", mode as u8)?;
+            self.set_u8_param(&in_params, w!("PowerMode"), mode as u8)?;
 
             let result = self.invoke_method("SetPowerMode", Some(&in_params))?;
-            let status = self.get_u32_from_result(&result, "ResultStatus")?;
+            let status = self.get_u32_from_result(&result, w!("ResultStatus"))?;
             if status == 255 {
                 bail!("模式切换被硬件拒绝，ResultStatus={}", status);
             }
@@ -243,10 +277,10 @@ impl HardwareControl for WindowsHardwareControl {
     fn get_fan_speed(&self, fan_num: u8) -> Result<Option<u32>> {
         unsafe {
             let in_params = self.create_in_params("GetFanControl")?;
-            self.set_u8_param(&in_params, "FanNumber", fan_num)?;
+            self.set_u8_param(&in_params, w!("FanNumber"), fan_num)?;
 
             let result = self.invoke_method("GetFanControl", Some(&in_params))?;
-            let packed = self.get_u32_from_result(&result, "FanDuty")?;
+            let packed = self.get_u32_from_result(&result, w!("FanDuty"))?;
 
             if !is_valid_fan_reading(packed) || packed == u32::MAX {
                 return Ok(None);
@@ -262,10 +296,10 @@ impl HardwareControl for WindowsHardwareControl {
     fn get_hw_temp(&self, temp_type: u8) -> Result<Option<u32>> {
         unsafe {
             let in_params = self.create_in_params("GetHwTemp")?;
-            self.set_u8_param(&in_params, "HwTempType", temp_type)?;
+            self.set_u8_param(&in_params, w!("HwTempType"), temp_type)?;
 
             let result = self.invoke_method("GetHwTemp", Some(&in_params))?;
-            let temp = self.get_u32_from_result(&result, "Temp")?;
+            let temp = self.get_u32_from_result(&result, w!("Temp"))?;
 
             Ok(if is_valid_temperature(temp) {
                 Some(temp)
@@ -278,13 +312,13 @@ impl HardwareControl for WindowsHardwareControl {
     fn get_feature_value(&self, key: FeatureKey) -> Result<Option<u32>> {
         unsafe {
             let in_params = self.create_in_params("GetFeatureValue")?;
-            self.set_u8_param(&in_params, "Reserved1", key as u8)?;
-            for name in ["Reserved2", "Reserved3", "Reserved4"] {
+            self.set_u8_param(&in_params, w!("Reserved1"), key as u8)?;
+            for name in [w!("Reserved2"), w!("Reserved3"), w!("Reserved4")] {
                 self.set_u8_param(&in_params, name, 0)?;
             }
 
             let result = self.invoke_method("GetFeatureValue", Some(&in_params))?;
-            let value = self.get_u32_from_result(&result, "ResultStatus")?;
+            let value = self.get_u32_from_result(&result, w!("ResultStatus"))?;
 
             Ok(if value != 255 { Some(value) } else { None })
         }
@@ -296,6 +330,33 @@ impl HardwareControl for WindowsHardwareControl {
 
     fn get_thermal_zone_temperature(&self) -> Result<Option<f32>> {
         unsafe {
+            let cached_object = {
+                let cached = self.thermal_path.borrow();
+                let mut object = None;
+                if let Some(path) = cached.as_ref() {
+                    if self
+                        .wmi_service
+                        .GetObject(
+                            path,
+                            WBEM_FLAG_RETURN_WBEM_COMPLETE,
+                            None,
+                            Some(&mut object),
+                            None,
+                        )
+                        .is_err()
+                    {
+                        object = None;
+                    }
+                }
+                object
+            };
+            if let Some(object) = cached_object {
+                return self
+                    .get_u32_from_result(&object, w!("CurrentTemperature"))
+                    .map(acpi_celsius);
+            }
+            // A disappeared/replaced provider must be rediscovered.
+            self.thermal_path.borrow_mut().take();
             let instances = self
                 .wmi_service
                 .CreateInstanceEnum(
@@ -317,10 +378,14 @@ impl HardwareControl for WindowsHardwareControl {
                 }
                 let object = objects[0].take().context("ACPI 热区对象为空")?;
                 let mut name = VARIANT::default();
-                object.Get(&BSTR::from("InstanceName"), 0, &mut name, None, None)?;
+                object.Get(w!("InstanceName"), 0, &mut name, None, None)?;
                 let name = BSTR::try_from(&name)?.to_string();
                 if name.eq_ignore_ascii_case(THERMAL_ZONE_INSTANCE) {
-                    let raw = self.get_u32_from_result(&object, "CurrentTemperature")?;
+                    let mut path = VARIANT::default();
+                    if object.Get(w!("__PATH"), 0, &mut path, None, None).is_ok() {
+                        *self.thermal_path.borrow_mut() = BSTR::try_from(&path).ok();
+                    }
+                    let raw = self.get_u32_from_result(&object, w!("CurrentTemperature"))?;
                     return Ok(acpi_celsius(raw));
                 }
             }
@@ -344,10 +409,10 @@ impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
         }
         unsafe {
             let input = self.create_in_params("SetFanControl")?;
-            self.set_u8_param(&input, "FanNumber", 1)?;
-            self.set_u8_param(&input, "FanDuty", target.encoded())?;
+            self.set_u8_param(&input, w!("FanNumber"), 1)?;
+            self.set_u8_param(&input, w!("FanDuty"), target.encoded())?;
             let output = self.invoke_method("SetFanControl", Some(&input))?;
-            self.get_u32_from_result(&output, "ResultStatus")
+            self.get_u32_from_result(&output, w!("ResultStatus"))
         }
     }
     fn measured_rpm(&self) -> Result<u32> {

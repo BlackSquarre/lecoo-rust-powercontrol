@@ -64,6 +64,9 @@ impl<T: CoolingIo> CoolingController<T> {
     pub fn target(&self) -> FanTarget {
         self.target
     }
+    pub fn is_armed(&self) -> bool {
+        self.armed
+    }
     pub fn sample(&self) -> Result<(f32, u32)> {
         let temp = self.io.temperature()?;
         let rpm = self.io.measured_rpm()?;
@@ -184,21 +187,23 @@ impl<T: CoolingIo> CoolingController<T> {
         if !self.armed {
             return Ok(());
         }
-        let sample = if self.target == FanTarget::Percent(100) {
-            self.measured_rpm().map(|rpm| (0.0, rpm))
-        } else {
-            self.sample()
-        };
         let reason = if heartbeat_age >= HEARTBEAT_TIMEOUT {
             Some("主程序心跳超时")
-        } else if sample
-            .as_ref()
-            .map(|(temp, _)| *temp >= MAX_MANUAL_TEMP)
-            .unwrap_or(true)
-        {
-            Some("过温或采样失败")
         } else {
-            None
+            let sample = if self.target == FanTarget::Percent(100) {
+                self.measured_rpm().map(|rpm| (0.0, rpm))
+            } else {
+                self.sample()
+            };
+            if sample
+                .as_ref()
+                .map(|(temp, _)| *temp >= MAX_MANUAL_TEMP)
+                .unwrap_or(true)
+            {
+                Some("过温或采样失败")
+            } else {
+                None
+            }
         };
         if let Some(reason) = reason {
             self.restore_auto()?;
@@ -219,6 +224,54 @@ impl<T: CoolingIo> Drop for CoolingController<T> {
 mod tests {
     use super::*;
     use std::{cell::RefCell, rc::Rc};
+    #[test]
+    fn protection_uses_one_sample_and_timeout_restores_before_sampling() {
+        struct Counted(Rc<RefCell<Vec<&'static str>>>);
+        impl CoolingIo for Counted {
+            fn write_fan(&mut self, target: FanTarget) -> Result<u32> {
+                self.0.borrow_mut().push(if target == FanTarget::Auto {
+                    "auto"
+                } else {
+                    "manual"
+                });
+                Ok(0)
+            }
+            fn measured_rpm(&self) -> Result<u32> {
+                self.0.borrow_mut().push("rpm");
+                Ok(2000)
+            }
+            fn temperature(&self) -> Result<f32> {
+                self.0.borrow_mut().push("temperature");
+                Ok(40.0)
+            }
+            fn supports_manual_temperature_guard(&self) -> bool {
+                true
+            }
+        }
+        for target in [FanTarget::Percent(100), FanTarget::Percent(50)] {
+            let calls = Rc::new(RefCell::new(Vec::new()));
+            let mut control = CoolingController::new(Counted(calls.clone()));
+            control.apply(target).unwrap();
+            calls.borrow_mut().clear();
+            control.guard(Duration::ZERO).unwrap();
+            assert_eq!(
+                calls.borrow().iter().filter(|call| **call == "rpm").count(),
+                1
+            );
+            assert_eq!(
+                calls
+                    .borrow()
+                    .iter()
+                    .filter(|call| **call == "temperature")
+                    .count(),
+                usize::from(target != FanTarget::Percent(100))
+            );
+            calls.borrow_mut().clear();
+            assert!(control.guard(HEARTBEAT_TIMEOUT).is_err());
+            assert_eq!(*calls.borrow(), vec!["auto", "rpm"]);
+            assert!(!control.is_armed());
+        }
+    }
     struct Fake {
         writes: Rc<RefCell<Vec<FanTarget>>>,
         temp: f32,

@@ -5,9 +5,9 @@ use resource_compiler::{parse, render, Catalog, LOCALES};
 
 fn catalogs() -> Vec<Catalog> {
     [
-        include_str!("../resources/locales/zh-CN.toml"),
+        include_str!("../resources/locales/zh-Hans.toml"),
         include_str!("../resources/locales/en.toml"),
-        include_str!("../resources/locales/zh-TW.toml"),
+        include_str!("../resources/locales/zh-Hant.toml"),
         include_str!("../resources/locales/ja.toml"),
         include_str!("../resources/locales/ko.toml"),
         include_str!("../resources/locales/es.toml"),
@@ -36,7 +36,7 @@ fn build_rejects_missing_and_unknown_translation_keys() {
     let mut catalogs = catalogs();
     let text = catalogs[2].messages.remove("settings.title").unwrap();
     let error = render(&catalogs).unwrap_err();
-    assert!(error.contains("zh-TW") && error.contains("settings.title"));
+    assert!(error.contains("zh-Hant") && error.contains("settings.title"));
     catalogs[2].messages.insert("settings.title".into(), text);
     catalogs[6]
         .messages

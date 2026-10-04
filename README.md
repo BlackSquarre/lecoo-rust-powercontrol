@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.0.3](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) · **Language:** [简体中文](README.zh-CN.md)
+**Author:** [BlackSquarre](https://github.com/BlackSquarre) · **Current release:** [v0.1.0](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0) · **Language:** [简体中文](README.zh-Hans.md)
 
 Lecoo Rust PowerControl is an independent community project. It is not affiliated with or endorsed by Lecoo or Lenovo.
 
@@ -34,14 +34,14 @@ Hardware access requires administrator privileges and a compatible Lecoo WMI pro
 
 ## Download
 
-Download the Windows x64 package from the [v0.0.3 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3):
+Download the Windows x64 package from the [v0.1.0 release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0):
 
-- `lecoo-rust-powercontrol-v0.0.3-windows-x64.zip` — application, hardware test utility, and executable checksums.
-- `lecoo-rust-powercontrol-v0.0.3-windows-x64-setup.exe` — installer with an uninstaller.
+- `lecoo-rust-powercontrol-v0.1.0-windows-x64.zip` — application, hardware test utility, and executable checksums.
+- `lecoo-rust-powercontrol-v0.1.0-windows-x64-setup.exe` — installer with an uninstaller.
 
 Enable “Start at sign-in (minimized to tray)” in Settings for automatic startup; it is off by default.
 
-Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) for validation details and known limitations.
+Run `lecoo-control-center.exe` as administrator to access the hardware controls. See the [release notes](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0) for validation details and known limitations.
 
 ## Build from source
 
@@ -67,10 +67,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 The script requests administrator privileges, checks all three profiles against an independent Windows CIM read, rejects an invalid mode value, and restores the original profile after success or failure. Use `-ReadOnly` to inspect hardware without changing its power profile. Detailed JSON reports are written to `logs/power-mode-tests/`, which is excluded from the public repository.
 
 See [docs/testing.md](docs/testing.md) for parameters and recovery behavior, and [docs/reference/wmi/interfaces.md](docs/reference/wmi/interfaces.md) for the hardware interface details.
-
-## Roadmap
-
-Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integration, the native interface and Auto/Maximum fan control are implemented. Animation is deferred to keep resource use low.
 
 ## Project layout
 

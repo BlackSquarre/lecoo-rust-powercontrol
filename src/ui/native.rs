@@ -15,12 +15,16 @@ use std::cell::{Cell, RefCell};
 use windows::{
     core::{w, HSTRING},
     Win32::{
-        Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Foundation::{
+            GetLastError, COLORREF, ERROR_CLASS_ALREADY_EXISTS, HANDLE, HINSTANCE, HWND, LPARAM,
+            LRESULT, RECT, WAIT_FAILED, WAIT_OBJECT_0, WPARAM,
+        },
         Graphics::{
             Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE},
             Gdi::*,
         },
         System::LibraryLoader::GetModuleHandleW,
+        System::Threading::INFINITE,
         UI::{
             Controls::*,
             HiDpi::*,
@@ -123,6 +127,9 @@ struct WindowData {
     notices: bool,
     mode: Option<u8>,
     about_icon: HICON,
+    fan_target: Option<u8>,
+    fan_ready: Option<bool>,
+    copyright_year: u16,
 }
 pub struct NativeWindow {
     pub hwnd: HWND,
@@ -508,7 +515,17 @@ unsafe extern "system" fn controller_procedure(
     }
     DefWindowProcW(hwnd, msg, wp, lp)
 }
-pub struct ControllerWindow(pub HWND);
+/// Wait for either a second launch or queued input; no polling thread is needed.
+pub fn wait_for_activity(event: HANDLE) -> Result<bool> {
+    let result = unsafe {
+        MsgWaitForMultipleObjectsEx(Some(&[event]), INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+    };
+    if result == WAIT_FAILED {
+        return Err(windows::core::Error::from_win32().into());
+    }
+    Ok(result == WAIT_OBJECT_0)
+}
+pub struct ControllerWindow(pub HWND, Cell<u32>);
 impl ControllerWindow {
     pub fn new() -> Result<Self> {
         unsafe {
@@ -530,7 +547,7 @@ impl ControllerWindow {
                     hCursor: LoadCursorW(None, IDC_ARROW)?,
                     ..Default::default()
                 };
-                if RegisterClassW(&class) == 0 {
+                if RegisterClassW(&class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS {
                     return Err(windows::core::Error::from_win32().into());
                 }
             }
@@ -556,13 +573,20 @@ impl ControllerWindow {
                 instance,
                 None,
             )?;
-            let result = Self(hwnd);
+            let result = Self(hwnd, Cell::new(0));
             CONTROLLER.with(|slot| slot.set(hwnd));
-            if SetTimer(hwnd, 1, 250, None) == 0 {
-                bail!("无法创建后台定时器");
-            }
+            result.set_interval(1000)?;
             Ok(result)
         }
+    }
+    pub fn set_interval(&self, milliseconds: u32) -> Result<()> {
+        if self.1.get() != milliseconds {
+            if unsafe { SetTimer(self.0, 1, milliseconds, None) } == 0 {
+                bail!("无法创建后台定时器");
+            }
+            self.1.set(milliseconds);
+        }
+        Ok(())
     }
 }
 impl Drop for ControllerWindow {
@@ -590,6 +614,9 @@ impl NativeWindow {
                 notices: false,
                 mode: None,
                 about_icon: HICON::default(),
+                fan_target: None,
+                fan_ready: None,
+                copyright_year: 0,
             }));
             let dpi = GetDpiForSystem().max(96);
             let (width, height) = if dialog { (440, 195) } else { (400, 520) };
@@ -810,6 +837,13 @@ impl NativeWindow {
     pub fn refresh_year(&self) {
         if self.data.borrow().about {
             let year = unsafe { windows::Win32::System::SystemInformation::GetLocalTime().wYear };
+            {
+                let mut state = self.data.borrow_mut();
+                if state.copyright_year == year {
+                    return;
+                }
+                state.copyright_year = year;
+            }
             self.text(343, format!("© {year} 缪凌儒 BlackSquare"));
         }
     }
@@ -874,6 +908,9 @@ impl NativeWindow {
         }
     }
     pub fn select(&self, id: u16, index: usize) {
+        if self.combo_index(id) == index {
+            return;
+        }
         unsafe {
             SendMessageW(self.handle(id), CB_SETCURSEL, WPARAM(index), LPARAM(0));
         }
@@ -1317,7 +1354,7 @@ impl NativeWindow {
             (DIALOG_EXIT, tr(Text::CommonExit)),
             (REMEMBER, tr(Text::CloseRemember)),
         ] {
-            self.text(id, text.into());
+            self.text(id, text);
         }
         if self.data.borrow().about {
             self.text(
@@ -1338,17 +1375,31 @@ impl NativeWindow {
         }
     }
     pub fn fan_state(&self, target: u8, ready: bool) {
+        let (target_changed, ready_changed) = {
+            let mut state = self.data.borrow_mut();
+            let changed = (
+                state.fan_target != Some(target),
+                state.fan_ready != Some(ready),
+            );
+            state.fan_target = Some(target);
+            state.fan_ready = Some(ready);
+            changed
+        };
         unsafe {
-            let _ = SetPropW(
-                self.hwnd,
-                w!("Lecoo.FanTarget"),
-                windows::Win32::Foundation::HANDLE((target as usize + 1) as *mut _),
-            );
-            let _ = SetPropW(
-                self.hwnd,
-                w!("Lecoo.FanReady"),
-                windows::Win32::Foundation::HANDLE((usize::from(ready) + 1) as *mut _),
-            );
+            if target_changed {
+                let _ = SetPropW(
+                    self.hwnd,
+                    w!("Lecoo.FanTarget"),
+                    windows::Win32::Foundation::HANDLE((target as usize + 1) as *mut _),
+                );
+            }
+            if ready_changed {
+                let _ = SetPropW(
+                    self.hwnd,
+                    w!("Lecoo.FanReady"),
+                    windows::Win32::Foundation::HANDLE((usize::from(ready) + 1) as *mut _),
+                );
+            }
         }
     }
     pub fn handle(&self, id: u16) -> HWND {
@@ -1366,7 +1417,8 @@ impl NativeWindow {
     pub fn dark(&self) -> bool {
         self.data.borrow().palette.dark
     }
-    pub fn text(&self, id: u16, text: String) {
+    pub fn text(&self, id: u16, text: impl AsRef<str>) {
+        let text = text.as_ref();
         if id == ERROR {
             let hwnd = self.handle(id);
             if hwnd.is_invalid() {
@@ -1402,7 +1454,8 @@ impl NativeWindow {
             if c.text == text {
                 return;
             }
-            c.text = text.clone();
+            c.text.clear();
+            c.text.push_str(text);
             c.hwnd
         };
         unsafe {

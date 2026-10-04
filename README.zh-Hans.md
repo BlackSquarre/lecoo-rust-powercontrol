@@ -13,7 +13,7 @@
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
 
-**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.0.3](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) · **Language:** [English](README.md)
+**作者：** [BlackSquarre](https://github.com/BlackSquarre) · **当前版本：** [v0.1.0](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0) · **Language:** [English](README.md)
 
 Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属、合作或背书关系。
 
@@ -34,14 +34,14 @@ Lecoo Rust PowerControl 是独立社区项目，与来酷或联想没有隶属�
 
 ## 下载
 
-在 [v0.0.3 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3) 下载 Windows x64 版本：
+在 [v0.1.0 Release](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0) 下载 Windows x64 版本：
 
-- `lecoo-rust-powercontrol-v0.0.3-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
-- `lecoo-rust-powercontrol-v0.0.3-windows-x64-setup.exe`：安装版，包含卸载程序。
+- `lecoo-rust-powercontrol-v0.1.0-windows-x64.zip`：控制中心、硬件测试工具和可执行文件校验值。
+- `lecoo-rust-powercontrol-v0.1.0-windows-x64-setup.exe`：安装版，包含卸载程序。
 
 开机自动运行可在应用设置中启用“登录后启动（进入托盘）”，默认关闭。
 
-以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.0.3)。
+以管理员身份运行 `lecoo-control-center.exe` 才能访问硬件控制。验证详情和已知限制见 [Release 日志](https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases/tag/v0.1.0)。
 
 ## 从源码构建
 

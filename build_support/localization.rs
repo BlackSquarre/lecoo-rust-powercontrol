@@ -2,7 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 // Explicit language order matches Language::ALL, excluding System.
-pub const LOCALES: [&str; 8] = ["zh-CN", "en", "zh-TW", "ja", "ko", "es", "fr", "de"];
+pub const LOCALES: [&str; 8] = ["zh-Hans", "en", "zh-Hant", "ja", "ko", "es", "fr", "de"];
 
 #[derive(Debug, Clone)]
 pub struct Catalog {

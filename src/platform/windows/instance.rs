@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use windows::{
     core::w,
     Win32::{
-        Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, WAIT_OBJECT_0},
-        System::Threading::{CreateEventW, CreateMutexW, SetEvent, WaitForSingleObject},
+        Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE},
+        System::Threading::{CreateEventW, CreateMutexW, SetEvent},
     },
 };
 
@@ -34,8 +34,8 @@ impl Instance {
             Ok(Some(guard))
         }
     }
-    pub fn take_open_request(&self) -> bool {
-        unsafe { WaitForSingleObject(self.event, 0) == WAIT_OBJECT_0 }
+    pub fn open_event(&self) -> HANDLE {
+        self.event
     }
 }
 impl Drop for Instance {

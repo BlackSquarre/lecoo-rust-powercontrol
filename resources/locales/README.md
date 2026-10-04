@@ -4,9 +4,9 @@ Each language has its own UTF-8 TOML file. All files must contain the same messa
 
 | File | Language |
 | --- | --- |
-| `zh-CN.toml` | 简体中文 |
+| `zh-Hans.toml` | 简体中文 |
 | `en.toml` | English |
-| `zh-TW.toml` | 繁體中文 |
+| `zh-Hant.toml` | 繁體中文 |
 | `ja.toml` | 日本語 |
 | `ko.toml` | 한국어 |
 | `es.toml` | Español |

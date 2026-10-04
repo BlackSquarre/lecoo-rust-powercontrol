@@ -39,9 +39,9 @@ impl Language {
     pub fn value(self) -> &'static str {
         match self {
             Self::System => "system",
-            Self::Chinese => "zh-CN",
+            Self::Chinese => "zh-Hans",
             Self::English => "en",
-            Self::TraditionalChinese => "zh-TW",
+            Self::TraditionalChinese => "zh-Hant",
             Self::Japanese => "ja",
             Self::Korean => "ko",
             Self::Spanish => "es",
@@ -52,9 +52,9 @@ impl Language {
 
     pub fn parse(value: &str) -> Self {
         match value {
-            "zh-CN" => Self::Chinese,
+            "zh-Hans" | "zh-CN" => Self::Chinese,
             "en" => Self::English,
-            "zh-TW" => Self::TraditionalChinese,
+            "zh-Hant" | "zh-TW" => Self::TraditionalChinese,
             "ja" => Self::Japanese,
             "ko" => Self::Korean,
             "es" => Self::Spanish,
@@ -82,7 +82,7 @@ impl Language {
 
     fn from_windows_lang_id(id: u16) -> Self {
         match id & 0x3ff {
-            // Taiwan, Hong Kong, Macao and the Traditional Chinese neutral ID.
+            // Traditional Chinese Windows language IDs and the neutral ID.
             0x04 if matches!(id >> 10, 1 | 3 | 5 | 0x1f) => Self::TraditionalChinese,
             0x04 => Self::Chinese,
             0x11 => Self::Japanese,

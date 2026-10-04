@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing release whose installer should be updated
         required: true
-        default: v0.0.3
+        default: v0.1.0
         type: string
 
 permissions:
