@@ -172,7 +172,12 @@ unsafe fn draw_button(state: &WindowData, item: &DRAWITEMSTRUCT) {
     let focused = item.itemState.0 & ODS_FOCUS.0 != 0;
     let pressed = item.itemState.0 & ODS_SELECTED.0 != 0;
     let scale = |v: i32| v * state.dpi / 96;
-    fill(dc, &rect, p.card);
+    let background = if state.settings && control.id == ABOUT {
+        p.background_color
+    } else {
+        p.card
+    };
+    fill(dc, &rect, background);
     let _ = SelectObject(
         dc,
         HGDIOBJ(state.fonts[if control.id == SETTINGS { 4 } else { 0 }].0 .0),
@@ -253,6 +258,12 @@ unsafe fn draw_button(state: &WindowData, item: &DRAWITEMSTRUCT) {
                     scale(7),
                 );
             }
+            let alignment = if control.id == RESET_CLOSE {
+                label.left += scale(4);
+                DT_LEFT | DT_VCENTER | DT_SINGLELINE
+            } else {
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE
+            };
             draw_text(
                 dc,
                 if control.id == SETTINGS {
@@ -262,7 +273,7 @@ unsafe fn draw_button(state: &WindowData, item: &DRAWITEMSTRUCT) {
                 },
                 label,
                 color,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+                alignment,
             );
         }
     }
@@ -426,7 +437,8 @@ unsafe extern "system" fn procedure(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
                         p.text
                     };
                     let _ = SetTextColor(dc, color);
-                    let footer = !state.dialog && [331, 332, ERROR].contains(&id);
+                    let footer = (!state.dialog && [331, 332, ERROR].contains(&id))
+                        || (state.settings && [354, ERROR].contains(&id));
                     let _ = SetBkColor(dc, if footer { p.background_color } else { p.card });
                     let _ = SetBkMode(dc, TRANSPARENT);
                     return LRESULT(if footer {
@@ -713,8 +725,8 @@ impl NativeWindow {
             let mut rect = RECT {
                 left: 0,
                 top: 0,
-                right: 440 * dpi as i32 / 96,
-                bottom: 300 * dpi as i32 / 96,
+                right: 380 * dpi as i32 / 96,
+                bottom: 440 * dpi as i32 / 96,
             };
             AdjustWindowRectExForDpi(
                 &mut rect,
@@ -734,6 +746,7 @@ impl NativeWindow {
             )?;
         }
         for (id, text, kind) in [
+            (352, tr("启动", "Startup"), Kind::Heading),
             (
                 STARTUP,
                 tr(
@@ -743,16 +756,18 @@ impl NativeWindow {
                 Kind::Check,
             ),
             (STARTUP_STATUS, "", Kind::Muted),
-            (350, tr("关闭窗口", "When closing the window"), Kind::Label),
+            (353, tr("窗口与语言", "Window & language"), Kind::Heading),
+            (350, tr("关闭窗口时", "When closing"), Kind::Label),
             (CLOSE_BEHAVIOR, "", Kind::Combo),
             (
                 RESET_CLOSE,
                 tr("重置关闭选择", "Reset close preference"),
-                Kind::Button,
+                Kind::Link,
             ),
             (351, tr("语言", "Language"), Kind::Label),
             (LANGUAGE, "", Kind::Combo),
             (ERROR, "", Kind::Small),
+            (354, tr("应用信息", "Application"), Kind::Muted),
             (ABOUT, tr("关于…", "About…"), Kind::Button),
         ] {
             ui.add(id, text, kind)?;
@@ -1224,23 +1239,39 @@ impl NativeWindow {
                     put(344, 16, 324, width - 32, 20);
                 }
             } else if dialog {
-                cards.push(RECT {
-                    left: 0,
-                    top: 0,
-                    right: client.right,
-                    bottom: client.bottom,
-                });
                 if self.is_settings() {
-                    put(STARTUP, 20, 18, width - 40, 30);
-                    put(STARTUP_STATUS, 20, 51, width - 40, 22);
-                    put(350, 20, 88, width - 40, 22);
-                    put(CLOSE_BEHAVIOR, 20, 114, width - 40, 180);
-                    put(RESET_CLOSE, 20, 152, 205, 30);
-                    put(351, 20, 202, 100, 22);
-                    put(LANGUAGE, 126, 195, width - 146, 170);
-                    put(ABOUT, 20, 245, 100, 30);
-                    put(ERROR, 130, 245, width - 150, 34);
+                    let inset = 32;
+                    let field_x = 152;
+                    let field_width = width - field_x - inset;
+                    for (y, height) in [(24, 112), (148, 188)] {
+                        cards.push(RECT {
+                            left: scale(16),
+                            top: scale(y),
+                            right: scale(width - 16),
+                            bottom: scale(y + height),
+                        });
+                    }
+                    put(352, inset, 36, width - 2 * inset, 24);
+                    put(STARTUP, inset, 68, width - 2 * inset, 28);
+                    // Match the status line to the checkbox's text, not its indicator.
+                    put(STARTUP_STATUS, inset + 29, 100, width - 2 * inset - 29, 20);
+                    put(353, inset, 160, width - 2 * inset, 24);
+                    put(350, inset, 198, field_x - inset - 16, 28);
+                    // Combo height includes the dropdown; its closed field is one row high.
+                    put(CLOSE_BEHAVIOR, field_x, 200, field_width, 180);
+                    put(RESET_CLOSE, field_x, 234, field_width, 24);
+                    put(351, inset, 284, field_x - inset - 16, 28);
+                    put(LANGUAGE, field_x, 286, field_width, 170);
+                    put(354, inset, 354, width - 2 * inset - 128, 28);
+                    put(ABOUT, width - inset - 112, 352, 112, 32);
+                    put(ERROR, inset, 400, width - 2 * inset, 28);
                 } else {
+                    cards.push(RECT {
+                        left: 0,
+                        top: 0,
+                        right: client.right,
+                        bottom: client.bottom,
+                    });
                     put(950, 24, 22, width - 48, 28);
                     put(951, 24, 58, width - 48, 20);
                     put(DIALOG_TRAY, 24, 88, (width - 60) / 2, 36);
@@ -1374,7 +1405,10 @@ impl NativeWindow {
                     "Start at sign-in (minimized to tray)",
                 ),
             ),
-            (350, tr("关闭窗口", "When closing the window")),
+            (350, tr("关闭窗口时", "When closing")),
+            (352, tr("启动", "Startup")),
+            (353, tr("窗口与语言", "Window & language")),
+            (354, tr("应用信息", "Application")),
             (351, tr("语言", "Language")),
             (RESET_CLOSE, tr("重置关闭选择", "Reset close preference")),
             (
