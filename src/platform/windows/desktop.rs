@@ -1,8 +1,10 @@
+use super::icons::ModeIcon;
 use crate::core::PowerMode;
 use crate::localization::{power_mode, text as tr};
 use anyhow::Result;
 use std::cell::Cell;
 use std::sync::mpsc::{self, Receiver};
+use std::time::{Duration, Instant};
 use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     Icon, MouseButton, TrayIcon, TrayIconBuilder, TrayIconEvent,
@@ -16,38 +18,16 @@ pub enum Action {
     Exit,
 }
 
-/// A small original power-button icon shared by the tray and window.
-pub fn icon_rgba() -> Vec<u8> {
-    icon_rgba_size(32)
-}
-pub fn icon_rgba_size(size: usize) -> Vec<u8> {
-    let mut rgba = vec![0u8; size * size * 4];
-    for y in 0..size {
-        for x in 0..size {
-            let dx = (x as f32 + 0.5) * 32.0 / size as f32 - 16.0;
-            let dy = (y as f32 + 0.5) * 32.0 / size as f32 - 16.0;
-            let distance = (dx * dx + dy * dy).sqrt();
-            let ring = (8.0..=11.0).contains(&distance) && !(dy < -4.0 && dx.abs() < 5.0);
-            let stem = dx.abs() < 1.8 && (-12.0..=0.0).contains(&dy);
-            let color = if ring || stem {
-                [0, 210, 166, 255]
-            } else if distance <= 15.0 {
-                [18, 25, 33, 255]
-            } else {
-                [0, 0, 0, 0]
-            };
-            rgba[(y * size + x) * 4..(y * size + x + 1) * 4].copy_from_slice(&color);
-        }
-    }
-    rgba
-}
-
 pub struct Desktop {
     icon: TrayIcon,
     modes: Vec<(PowerMode, CheckMenuItem)>,
     receiver: Receiver<Action>,
     registered: Cell<bool>,
     commands: [MenuItem; 3],
+    cached_icons: [Icon; 4],
+    current_mode: Cell<Option<Option<PowerMode>>>,
+    language_dirty: Cell<bool>,
+    last_refresh: Cell<Instant>,
 }
 impl Desktop {
     pub fn new() -> Result<Self> {
@@ -69,8 +49,15 @@ impl Desktop {
         }
         menu.append(&PredefinedMenuItem::separator())?;
         menu.append_items(&[&open, &hide, &exit])?;
+        // Icon clones share their native handle through Arc; no bitmap rendering at runtime.
+        let cached_icons = [
+            Icon::from_resource(ModeIcon::Quiet as u16, Some((32, 32)))?,
+            Icon::from_resource(ModeIcon::Balanced as u16, Some((32, 32)))?,
+            Icon::from_resource(ModeIcon::Performance as u16, Some((32, 32)))?,
+            Icon::from_resource(ModeIcon::Unknown as u16, Some((32, 32)))?,
+        ];
         let icon = TrayIconBuilder::new()
-            .with_icon(Icon::from_rgba(icon_rgba(), 32, 32)?)
+            .with_icon(cached_icons[3].clone())
             .with_menu(Box::new(menu))
             .with_menu_on_left_click(false)
             .with_tooltip("Lecoo Rust PowerControl")
@@ -117,14 +104,38 @@ impl Desktop {
             receiver,
             registered: Cell::new(true),
             commands: [open, hide, exit],
+            cached_icons,
+            current_mode: Cell::new(None),
+            language_dirty: Cell::new(true),
+            last_refresh: Cell::new(Instant::now()),
         })
     }
     pub fn actions(&self) -> Vec<Action> {
         self.receiver.try_iter().collect()
     }
     pub fn refresh(&self, mode: Option<PowerMode>) {
-        for (candidate, item) in &self.modes {
-            item.set_checked(mode == Some(*candidate));
+        let changed = self.current_mode.get() != Some(mode);
+        if !changed
+            && !self.language_dirty.get()
+            && self.registered.get()
+            && self.last_refresh.get().elapsed() < Duration::from_secs(5)
+        {
+            return;
+        }
+        if changed || !self.registered.get() {
+            let index = ModeIcon::from_mode(mode) as usize - 1;
+            if self
+                .icon
+                .set_icon(Some(self.cached_icons[index].clone()))
+                .is_err()
+            {
+                self.registered.set(false);
+                return;
+            }
+            for (candidate, item) in &self.modes {
+                item.set_checked(mode == Some(*candidate));
+            }
+            self.current_mode.set(Some(mode));
         }
         let text = mode
             .map(power_mode)
@@ -135,11 +146,14 @@ impl Desktop {
                 .set_tooltip(Some(format!("Lecoo Rust PowerControl — {text}")))
                 .is_ok(),
         );
+        self.language_dirty.set(false);
+        self.last_refresh.set(Instant::now());
     }
     pub fn is_available(&self) -> bool {
         self.registered.get()
     }
     pub fn retranslate(&self) {
+        self.language_dirty.set(true);
         for (mode, item) in &self.modes {
             item.set_text(power_mode(*mode));
         }

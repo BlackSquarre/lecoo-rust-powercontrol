@@ -17,6 +17,8 @@ CI 的测试使用 Rust 测试入口，不运行应用或硬件工具的 `main`�
 
 # v0.0.3 当前验证
 
+模式图标的独立检查：在配置好 MSVC 的终端运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-mode-icons.ps1`。测试模拟安静/均衡/性能/未知状态，核对任务栏与标题栏使用的大小图标、设置/关于/声明/关闭弹窗图标、100/125/150/200% DPI、重复刷新句柄复用及 12 轮窗口资源释放。不调用硬件接口、不改变用户偏好；可以在应用已运行时执行。测试程序用当前用户权限运行。报告保存到 `logs/mode-icons/native-icons.json`。
+
 - `cargo test --lib --locked`：纯状态机、输入及温度换算测试，不调用实际硬件写入。Windows 构建带管理员清单，测试可执行文件需要提权启动。
 - `target/release/hardware_test.exe --thermal-zone`：生产 ACPI 热区读取；独立 CIM 枚举核对原始值，不修改硬件。
 - `scripts/test-native-ui.ps1`：热区标签、中英文、版本、四格界面、禁用手动目标、最大风量、窗口与托盘检查；会临时改变模式、风扇、偏好与主题。

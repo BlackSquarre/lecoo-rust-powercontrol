@@ -19,6 +19,7 @@ OutputBaseFilename=lecoo-rust-powercontrol-v{#AppVersion}-windows-x64-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\assets\icons\app.ico
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\lecoo-control-center.exe
@@ -32,8 +33,8 @@ Source: "..\target\release\hardware_test.exe"; DestDir: "{app}"; Flags: ignoreve
 Source: "uninstall-startup.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.exe"
-Name: "{autodesktop}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.exe"; Tasks: desktopicon
+Name: "{group}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.exe"; IconFilename: "{app}\lecoo-control-center.exe"; IconIndex: 0
+Name: "{autodesktop}\Lecoo Rust PowerControl"; Filename: "{app}\lecoo-control-center.exe"; IconFilename: "{app}\lecoo-control-center.exe"; IconIndex: 0; Tasks: desktopicon
 
 [Run]
 ; The app requires elevation. postinstall otherwise defaults to the pre-UAC user.

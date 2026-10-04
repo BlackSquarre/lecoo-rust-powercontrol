@@ -1,6 +1,11 @@
 //! System HWND controls, with small GDI paint handlers for consistent light/dark colors.
 //! No graphics context, bitmap back buffer, bundled fonts or continuous animation.
+#[cfg(test)]
+#[path = "icon_tests.rs"]
+mod icon_tests;
 use super::native_theme::{system_dark, Brush, Palette};
+use crate::core::PowerMode;
+use crate::platform::windows::icons::{ModeIcon, WindowIcons};
 use anyhow::{bail, Result};
 use lecoo_control_center::localization::text as tr;
 use std::cell::{Cell, RefCell};
@@ -39,7 +44,6 @@ pub const TARGET: u16 = 122;
 pub const MANUAL: u16 = 123;
 pub const RECONNECT: u16 = 124;
 pub const STARTUP: u16 = 130;
-pub const RESET_CLOSE: u16 = 132;
 pub const SETTINGS: u16 = 140;
 pub const LANGUAGE: u16 = 141;
 pub const CLOSE_BEHAVIOR: u16 = 142;
@@ -54,7 +58,6 @@ pub const MEMORY_BAR: u16 = 203;
 pub const DISK: u16 = 204;
 pub const DISK_BAR: u16 = 205;
 pub const ERROR: u16 = 206;
-pub const STARTUP_STATUS: u16 = 212;
 pub const CURRENT_MODE: u16 = 213;
 pub const PERCENT: u16 = 214;
 pub const CONNECTION: u16 = 216;
@@ -116,11 +119,12 @@ struct WindowData {
     about: bool,
     notices: bool,
     mode: Option<u8>,
+    about_icon: HICON,
 }
 pub struct NativeWindow {
     pub hwnd: HWND,
     data: Box<RefCell<WindowData>>,
-    icon: Option<HICON>,
+    icons: RefCell<Option<WindowIcons>>,
 }
 
 unsafe fn data<'a>(hwnd: HWND) -> Option<&'a RefCell<WindowData>> {
@@ -258,12 +262,6 @@ unsafe fn draw_button(state: &WindowData, item: &DRAWITEMSTRUCT) {
                     scale(7),
                 );
             }
-            let alignment = if control.id == RESET_CLOSE {
-                label.left += scale(4);
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE
-            } else {
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE
-            };
             draw_text(
                 dc,
                 if control.id == SETTINGS {
@@ -273,7 +271,7 @@ unsafe fn draw_button(state: &WindowData, item: &DRAWITEMSTRUCT) {
                 },
                 label,
                 color,
-                alignment,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
             );
         }
     }
@@ -389,16 +387,12 @@ unsafe extern "system" fn procedure(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
                         rounded(dc, *card, p.card, p.border, 10 * state.dpi / 96);
                     }
                     if state.about {
-                        let icon = HICON(
-                            SendMessageW(hwnd, WM_GETICON, WPARAM(ICON_BIG as usize), LPARAM(0)).0
-                                as *mut _,
-                        );
                         let size = 64 * state.dpi / 96;
                         let _ = DrawIconEx(
                             dc,
                             (rect.right - size) / 2,
                             20 * state.dpi / 96,
-                            icon,
+                            state.about_icon,
                             size,
                             size,
                             0,
@@ -438,7 +432,7 @@ unsafe extern "system" fn procedure(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM
                     };
                     let _ = SetTextColor(dc, color);
                     let footer = (!state.dialog && [331, 332, ERROR].contains(&id))
-                        || (state.settings && [354, ERROR].contains(&id));
+                        || (state.settings && id == ERROR);
                     let _ = SetBkColor(dc, if footer { p.background_color } else { p.card });
                     let _ = SetBkMode(dc, TRANSPARENT);
                     return LRESULT(if footer {
@@ -592,6 +586,7 @@ impl NativeWindow {
                 about: false,
                 notices: false,
                 mode: None,
+                about_icon: HICON::default(),
             }));
             let dpi = GetDpiForSystem().max(96);
             let (width, height) = if dialog { (440, 195) } else { (400, 520) };
@@ -630,48 +625,13 @@ impl NativeWindow {
                 HINSTANCE(GetModuleHandleW(None)?.0),
                 Some((&*state as *const RefCell<WindowData>).cast()),
             )?;
-            let mut ui = Self {
+            let ui = Self {
                 hwnd,
                 data: state,
-                icon: None,
+                icons: RefCell::new(None),
             };
             ui.update_font()?;
-            let mut pixels = crate::platform::windows::desktop::icon_rgba();
-            let mut mask = [0u8; 128];
-            for (i, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-                pixel.swap(0, 2);
-                if pixel[3] == 0 {
-                    mask[i / 8] |= 1 << (7 - i % 8);
-                }
-            }
-            let owned = CreateIcon(
-                HINSTANCE(GetModuleHandleW(None)?.0),
-                32,
-                32,
-                1,
-                32,
-                mask.as_ptr(),
-                pixels.as_ptr(),
-            )
-            .ok();
-            let icon = if let Some(icon) = owned {
-                ui.icon = Some(icon);
-                icon
-            } else {
-                LoadIconW(None, IDI_APPLICATION)?
-            };
-            let _ = SendMessageW(
-                hwnd,
-                WM_SETICON,
-                WPARAM(ICON_SMALL as usize),
-                LPARAM(icon.0 as isize),
-            );
-            let _ = SendMessageW(
-                hwnd,
-                WM_SETICON,
-                WPARAM(ICON_BIG as usize),
-                LPARAM(icon.0 as isize),
-            );
+            ui.icon_mode(None)?;
             Ok(ui)
         }
     }
@@ -726,7 +686,7 @@ impl NativeWindow {
                 left: 0,
                 top: 0,
                 right: 380 * dpi as i32 / 96,
-                bottom: 440 * dpi as i32 / 96,
+                bottom: 312 * dpi as i32 / 96,
             };
             AdjustWindowRectExForDpi(
                 &mut rect,
@@ -747,27 +707,13 @@ impl NativeWindow {
         }
         for (id, text, kind) in [
             (352, tr("启动", "Startup"), Kind::Heading),
-            (
-                STARTUP,
-                tr(
-                    "登录后启动（进入托盘）",
-                    "Start at sign-in (minimized to tray)",
-                ),
-                Kind::Check,
-            ),
-            (STARTUP_STATUS, "", Kind::Muted),
+            (STARTUP, tr("登录后启动", "Start at sign-in"), Kind::Check),
             (353, tr("窗口与语言", "Window & language"), Kind::Heading),
             (350, tr("关闭窗口时", "When closing"), Kind::Label),
             (CLOSE_BEHAVIOR, "", Kind::Combo),
-            (
-                RESET_CLOSE,
-                tr("重置关闭选择", "Reset close preference"),
-                Kind::Link,
-            ),
             (351, tr("语言", "Language"), Kind::Label),
             (LANGUAGE, "", Kind::Combo),
             (ERROR, "", Kind::Small),
-            (354, tr("应用信息", "Application"), Kind::Muted),
             (ABOUT, tr("关于…", "About…"), Kind::Button),
         ] {
             ui.add(id, text, kind)?;
@@ -791,7 +737,7 @@ impl NativeWindow {
         Ok(ui)
     }
     pub fn about_dialog(owner: HWND, notices: bool) -> Result<Self> {
-        let mut ui = Self::create(Some(owner), true)?;
+        let ui = Self::create(Some(owner), true)?;
         ui.data.borrow_mut().about = !notices;
         ui.data.borrow_mut().notices = notices;
         unsafe {
@@ -835,7 +781,7 @@ impl NativeWindow {
                 );
             }
         } else {
-            ui.install_about_icon();
+            ui.icon_mode(None)?;
             for (id, text, kind) in [
                 (340, "Lecoo Rust PowerControl", Kind::CenterHeading),
                 (
@@ -879,43 +825,40 @@ impl NativeWindow {
             self.text(343, format!("© {year} 缪凌儒 BlackSquare"));
         }
     }
-    fn install_about_icon(&mut self) {
-        let size = 128usize;
-        let mut pixels = crate::platform::windows::desktop::icon_rgba_size(size);
-        let mut mask = vec![0u8; size * size / 8];
-        for (i, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
-            pixel.swap(0, 2);
-            if pixel[3] == 0 {
-                mask[i / 8] |= 1 << (7 - i % 8);
-            }
+    pub fn icon_mode(&self, mode: Option<PowerMode>) -> Result<()> {
+        let mode = ModeIcon::from_mode(mode);
+        let dpi = unsafe { GetDpiForWindow(self.hwnd) }.max(96);
+        let about = self.data.borrow().about;
+        if self.icons.borrow().as_ref().is_some_and(|icons| {
+            icons.mode == mode && icons.dpi == dpi && icons.about.is_some() == about
+        }) {
+            return Ok(());
         }
+        // Load a complete replacement before releasing handles still used by Windows.
+        let icons = WindowIcons::load(mode, dpi, about)?;
+        self.data.borrow_mut().about_icon =
+            icons.about.as_ref().map(|icon| icon.0).unwrap_or_default();
         unsafe {
-            if let Ok(icon) = CreateIcon(
-                HINSTANCE(GetModuleHandleW(None).unwrap_or_default().0),
-                size as i32,
-                size as i32,
-                1,
-                32,
-                mask.as_ptr(),
-                pixels.as_ptr(),
-            ) {
-                SendMessageW(
-                    self.hwnd,
-                    WM_SETICON,
-                    WPARAM(ICON_BIG as usize),
-                    LPARAM(icon.0 as isize),
-                );
-                SendMessageW(
-                    self.hwnd,
-                    WM_SETICON,
-                    WPARAM(ICON_SMALL as usize),
-                    LPARAM(icon.0 as isize),
-                );
-                if let Some(old) = self.icon.replace(icon) {
-                    let _ = DestroyIcon(old);
-                }
+            SendMessageW(
+                self.hwnd,
+                WM_SETICON,
+                WPARAM(ICON_SMALL as usize),
+                LPARAM(icons.small.0 .0 as isize),
+            );
+            SendMessageW(
+                self.hwnd,
+                WM_SETICON,
+                WPARAM(ICON_BIG as usize),
+                LPARAM(icons.big.0 .0 as isize),
+            );
+        }
+        *self.icons.borrow_mut() = Some(icons);
+        if about {
+            unsafe {
+                let _ = InvalidateRect(self.hwnd, None, false);
             }
         }
+        Ok(())
     }
     pub fn is_settings(&self) -> bool {
         self.data.borrow().settings
@@ -1240,10 +1183,10 @@ impl NativeWindow {
                 }
             } else if dialog {
                 if self.is_settings() {
-                    let inset = 32;
-                    let field_x = 152;
+                    let inset = 28;
+                    let field_x = 144;
                     let field_width = width - field_x - inset;
-                    for (y, height) in [(24, 112), (148, 188)] {
+                    for (y, height) in [(16, 80), (108, 120)] {
                         cards.push(RECT {
                             left: scale(16),
                             top: scale(y),
@@ -1251,20 +1194,16 @@ impl NativeWindow {
                             bottom: scale(y + height),
                         });
                     }
-                    put(352, inset, 36, width - 2 * inset, 24);
-                    put(STARTUP, inset, 68, width - 2 * inset, 28);
-                    // Match the status line to the checkbox's text, not its indicator.
-                    put(STARTUP_STATUS, inset + 29, 100, width - 2 * inset - 29, 20);
-                    put(353, inset, 160, width - 2 * inset, 24);
-                    put(350, inset, 198, field_x - inset - 16, 28);
+                    put(352, inset, 28, width - 2 * inset, 24);
+                    put(STARTUP, inset, 56, width - 2 * inset, 28);
+                    put(353, inset, 120, width - 2 * inset, 24);
+                    put(350, inset, 152, field_x - inset - 12, 28);
                     // Combo height includes the dropdown; its closed field is one row high.
-                    put(CLOSE_BEHAVIOR, field_x, 200, field_width, 180);
-                    put(RESET_CLOSE, field_x, 234, field_width, 24);
-                    put(351, inset, 284, field_x - inset - 16, 28);
-                    put(LANGUAGE, field_x, 286, field_width, 170);
-                    put(354, inset, 354, width - 2 * inset - 128, 28);
-                    put(ABOUT, width - inset - 112, 352, 112, 32);
-                    put(ERROR, inset, 400, width - 2 * inset, 28);
+                    put(CLOSE_BEHAVIOR, field_x, 154, field_width, 180);
+                    put(351, inset, 190, field_x - inset - 12, 28);
+                    put(LANGUAGE, field_x, 192, field_width, 170);
+                    put(ABOUT, width - inset - 112, 240, 112, 32);
+                    put(ERROR, inset, 280, width - 2 * inset, 20);
                 } else {
                     cards.push(RECT {
                         left: 0,
@@ -1398,19 +1337,11 @@ impl NativeWindow {
             (MANUAL, tr("手动", "Manual")),
             (MAXIMUM, tr("最大", "Maximum")),
             (SETTINGS, tr("设置", "Settings")),
-            (
-                STARTUP,
-                tr(
-                    "登录后启动（进入托盘）",
-                    "Start at sign-in (minimized to tray)",
-                ),
-            ),
+            (STARTUP, tr("登录后启动", "Start at sign-in")),
             (350, tr("关闭窗口时", "When closing")),
             (352, tr("启动", "Startup")),
             (353, tr("窗口与语言", "Window & language")),
-            (354, tr("应用信息", "Application")),
             (351, tr("语言", "Language")),
-            (RESET_CLOSE, tr("重置关闭选择", "Reset close preference")),
             (
                 950,
                 tr("关闭窗口后要执行什么操作？", "What would you like to do?"),
@@ -1594,9 +1525,7 @@ impl Drop for NativeWindow {
                 let _ = EnableWindow(owner, true);
             }
             let _ = DestroyWindow(self.hwnd);
-            if let Some(icon) = self.icon.take() {
-                let _ = DestroyIcon(icon);
-            }
+            self.icons.get_mut().take();
         }
     }
 }

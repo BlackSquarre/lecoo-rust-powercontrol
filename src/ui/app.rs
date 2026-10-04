@@ -399,10 +399,6 @@ impl ControlCenterApp {
                     "enable"
                 });
             }
-            native::RESET_CLOSE => match preferences::save(CloseBehavior::Ask) {
-                Ok(()) => self.close_behavior = CloseBehavior::Ask,
-                Err(error) => self.last_error = Some(format!("保存设置失败: {error:#}")),
-            },
             native::REMEMBER => {
                 if let Some(ui) = &self.dialog {
                     ui.check(native::REMEMBER, !ui.checked(native::REMEMBER));
@@ -429,7 +425,6 @@ impl ControlCenterApp {
                     native::MANUAL,
                     native::MAXIMUM,
                     native::STARTUP,
-                    native::RESET_CLOSE,
                     native::RECONNECT,
                     native::SETTINGS,
                     native::ABOUT,
@@ -571,6 +566,15 @@ impl ControlCenterApp {
             ui.refresh_year();
         }
         let snapshot = self.monitor.update();
+        self.desktop.refresh(snapshot.power_mode);
+        for ui in [&self.window, &self.dialog, &self.about, &self.notices]
+            .into_iter()
+            .flatten()
+        {
+            if let Err(error) = ui.icon_mode(snapshot.power_mode) {
+                self.last_error = Some(format!("{error:#}"));
+            }
+        }
         let Some(ui) = &self.window else {
             return;
         };
@@ -635,23 +639,6 @@ impl ControlCenterApp {
                 native::STARTUP,
                 self.startup_pending.is_none() && self.startup_status.is_some(),
             );
-            dialog.text(
-                native::STARTUP_STATUS,
-                match self.startup_status {
-                    None => tr("正在查询登录启动状态…", "Checking sign-in startup…"),
-                    Some(StartupStatus::Disabled) => {
-                        tr("登录启动：已关闭", "Sign-in startup: disabled")
-                    }
-                    Some(StartupStatus::Enabled) => {
-                        tr("登录启动：已启用", "Sign-in startup: enabled")
-                    }
-                    Some(StartupStatus::Stale) => tr(
-                        "登录启动条目失效，请重新启用",
-                        "Startup task is invalid; enable it again",
-                    ),
-                }
-                .into(),
-            );
             dialog.select(
                 native::CLOSE_BEHAVIOR,
                 match self.close_behavior {
@@ -661,10 +648,6 @@ impl ControlCenterApp {
                 },
             );
             dialog.select(native::LANGUAGE, localization::language().index());
-            dialog.enable(
-                native::RESET_CLOSE,
-                self.close_behavior != CloseBehavior::Ask,
-            );
         }
         let error = self
             .last_error

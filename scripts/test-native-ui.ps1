@@ -142,7 +142,8 @@ try{
  }
  SelectCombo $settings 142 1
  if([IO.File]::ReadAllText($taskPreference) -notmatch '(?m)^close_behavior=tray$'){throw 'Settings close preference was not saved'}
- Click $settings 132
+ SelectCombo $settings 142 0
+ if([IO.File]::ReadAllText($taskPreference) -notmatch '(?m)^close_behavior=ask$'){throw 'Ask every time close preference was not saved'}
  SelectCombo $settings 141 2
  $null=[NativeUiTest]::PostMessage($settings,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 500
  if(![NativeUiTest]::IsWindowEnabled($taskWindow)){throw 'Closing settings left dashboard disabled'}
@@ -199,7 +200,7 @@ try{
  $taskReport.Checks+='Remember tray; repeated minimize/reopen does not grow GDI/USER handles'
  $null=[NativeUiTest]::PostMessage($taskWindow,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Seconds 1
  if(DialogWindow){throw 'Remembered tray choice still prompted'}
- $taskWindow=Reopen;Click $taskWindow 140;$settings=SettingsWindow;Click $settings 132;$null=[NativeUiTest]::PostMessage($settings,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 500
+ $taskWindow=Reopen;Click $taskWindow 140;$settings=SettingsWindow;SelectCombo $settings 142 0;$null=[NativeUiTest]::PostMessage($settings,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 500
  $null=[NativeUiTest]::PostMessage($taskWindow,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Seconds 1
  $dialog=DialogWindow;$null=[NativeUiTest]::PostMessage($dialog,0x10,[IntPtr]::Zero,[IntPtr]::Zero);Start-Sleep -Milliseconds 500
  if(DialogWindow){throw 'Dialog cancellation did not close prompt'}
@@ -208,7 +209,7 @@ try{
  $dialog=DialogWindow;Click $dialog 903;Click $dialog 902
  if(!$taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0){throw 'Dialog exit did not shut down normally'}
  if([IO.File]::ReadAllText($taskPreference) -notmatch '(?m)^close_behavior=exit$'){throw 'Remembered exit choice not saved'}
- $taskReport.Checks+='Reset choice, cancel dialog and remember exit all work'
+ $taskReport.Checks+='Ask every time choice, cancel dialog and remember exit all work'
  $taskReport.Passed=$true
 }catch{if($taskWindow){$taskReport['DashboardError']=Caption $taskWindow 206;Capture $taskWindow 'failure'};$taskReport.Error=$_.Exception.Message;$taskReport['ErrorLine']=$_.InvocationInfo.Line;$taskReport['ErrorStack']=$_.ScriptStackTrace}
 finally{

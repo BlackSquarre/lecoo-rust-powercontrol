@@ -5,10 +5,17 @@ fn main() {
         let mut res = winres::WindowsResource::new();
         res.set_manifest_file("app.manifest");
 
-        // 如果图标文件存在才设置
-        if std::path::Path::new("icon.ico").exists() {
-            res.set_icon("icon.ico");
-            println!("cargo:rerun-if-changed=icon.ico");
+        // The lowest resource ID is the static green application/shortcut icon.
+        // Runtime windows and the tray select another embedded color after readback.
+        for (id, name) in [
+            ("1", "app"),
+            ("2", "balanced"),
+            ("3", "performance"),
+            ("4", "unknown"),
+        ] {
+            let path = format!("assets/icons/{name}.ico");
+            res.set_icon_with_id(&path, id);
+            println!("cargo:rerun-if-changed={path}");
         }
 
         println!("cargo:rerun-if-changed=app.manifest");
