@@ -1,3 +1,20 @@
+# GitHub Actions 持续集成
+
+[Windows CI](../.github/workflows/ci.yml) 在所有分支的提交、Pull Request 和手动触发时运行，使用 Windows x64 托管环境和 stable Rust MSVC 工具链。连续提交会取消同一分支或 PR 上尚未结束的旧任务。
+
+检查顺序如下，任一步失败都会使整个任务失败：
+
+1. `cargo fmt --all -- --check`：检查 Rust 格式。
+2. `cargo clippy --all-targets --locked -- -D warnings`：检查默认功能下的库、应用和硬件测试工具，警告按错误处理。
+3. `cargo test --all-targets --locked`：运行库和二进制目标中的单元测试，包括冷却状态机、温度换算、中英文资源和界面偏好解析。
+4. `cargo build --release --locked --bin lecoo-control-center --bin hardware_test`：验证两份正式发布程序能完成编译和链接。
+
+依赖使用 `Cargo.lock` 并缓存；任务只需要仓库读取权限，无需配置额外 Secrets。默认未启用的 `legacy-memory-probe` 实验功能不在 CI 编译范围内。版本标签触发的发布流程也执行所有默认目标的单元测试，并继续验证安装及卸载。
+
+CI 的测试使用 Rust 测试入口，不运行应用或硬件工具的 `main`，也不调用三个实机测试脚本。托管环境不具备来酷 WMI 接口；电源模式、风扇、托盘及登录启动的实际行为仍须在兼容设备上验证。
+
+本地可依次执行以上四条命令。由于嵌入了管理员清单，单元测试需要在管理员终端运行；GitHub 的 Windows 托管环境已具备管理员权限。
+
 # v0.0.3 当前验证
 
 - `cargo test --lib --locked`：纯状态机、输入及温度换算测试，不调用实际硬件写入。Windows 构建带管理员清单，测试可执行文件需要提权启动。

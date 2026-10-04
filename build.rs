@@ -12,6 +12,7 @@ fn main() {
         }
 
         println!("cargo:rerun-if-changed=app.manifest");
-        res.compile().expect("Failed to embed administrator manifest");
+        res.compile()
+            .expect("Failed to embed administrator manifest");
     }
 }

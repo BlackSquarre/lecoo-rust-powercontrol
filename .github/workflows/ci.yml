@@ -1,0 +1,53 @@
+name: Windows CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  test:
+    name: Windows x64 checks and tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check Clippy warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # Test harnesses exercise pure logic; application and hardware-tool mains do not run.
+      - name: Run unit tests for the library and binaries
+        run: cargo test --all-targets --locked
+
+      - name: Build release binaries
+        run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test

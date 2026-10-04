@@ -359,19 +359,6 @@ impl crate::core::cooling::CoolingIo for WindowsHardwareControl {
     }
 }
 
-#[cfg(test)]
-mod thermal_zone_tests {
-    use super::acpi_celsius;
-
-    #[test]
-    fn converts_tenths_kelvin_and_rejects_invalid_values() {
-        assert!((acpi_celsius(3112).unwrap() - 38.05).abs() < 0.001);
-        for raw in [0, 2731, 2147483647, u32::MAX, 5000] {
-            assert!(acpi_celsius(raw).is_none());
-        }
-    }
-}
-
 impl WindowsHardwareControl {
     fn is_elevated_impl(&self) -> Result<bool> {
         unsafe {
@@ -403,6 +390,19 @@ impl WindowsHardwareControl {
             let _ = CloseHandle(token);
 
             Ok(success.is_ok() && elevation.TokenIsElevated != 0)
+        }
+    }
+}
+
+#[cfg(test)]
+mod thermal_zone_tests {
+    use super::acpi_celsius;
+
+    #[test]
+    fn converts_tenths_kelvin_and_rejects_invalid_values() {
+        assert!((acpi_celsius(3112).unwrap() - 38.05).abs() < 0.001);
+        for raw in [0, 2731, 2147483647, u32::MAX, 5000] {
+            assert!(acpi_celsius(raw).is_none());
         }
     }
 }

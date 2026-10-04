@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases"><img src="https://img.shields.io/github/v/release/BlackSquarre/lecoo-rust-powercontrol?display_name=tag" alt="Latest release"></a>
   <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml/badge.svg" alt="Windows release build"></a>
+  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/ci.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/ci.yml/badge.svg" alt="Windows CI"></a>
   <img src="https://img.shields.io/badge/Rust-2021-orange?logo=rust" alt="Rust 2021">
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
@@ -51,6 +52,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 
 Packaging also requires Inno Setup 6. The script creates both ZIP and installer in `dist/`. GitHub Actions produces both formats for every version tag and checks installation and removal. The native C runtime is statically linked.
 
+Every branch push and pull request runs Windows CI: formatting, Clippy, library and binary unit tests, and release builds. It can also be started manually from Actions. See the [testing guide](docs/testing.md) for coverage and local commands.
+
 ## Automated hardware test
 
 On a compatible Windows system, run:
@@ -73,7 +76,7 @@ Planned features are tracked in [ROADMAP.md](ROADMAP.md). Startup, tray integrat
 src/       Rust application, UI, hardware abstraction, and test utility
 scripts/   Windows build and automated hardware-test scripts
 docs/      Setup, testing, and hardware-interface documentation
-.github/   Windows release workflow
+.github/   Windows CI and release workflows
 ```
 
 ## License

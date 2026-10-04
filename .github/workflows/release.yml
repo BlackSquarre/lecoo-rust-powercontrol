@@ -26,7 +26,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Check unit tests
-        run: cargo test --lib --locked
+        run: cargo test --all-targets --locked
 
       - name: Build release binaries
         run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test

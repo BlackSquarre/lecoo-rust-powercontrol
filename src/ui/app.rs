@@ -123,8 +123,7 @@ impl ControlCenterApp {
                             if let Some(ui) = [&app.window, &app.dialog, &app.about, &app.notices]
                                 .into_iter()
                                 .flatten()
-                                .filter(|ui| ui.hwnd.0 as usize == message.wParam.0)
-                                .next()
+                                .find(|ui| ui.hwnd.0 as usize == message.wParam.0)
                             {
                                 ui.layout();
                             }
@@ -469,7 +468,8 @@ impl ControlCenterApp {
     }
     fn submit_manual(&mut self, percent: u8) {
         if percent != 100 {
-            self.last_error = Some("ACPI 热区尚未验证为 CPU 保护温度，手动风扇目标暂不可用".to_owned());
+            self.last_error =
+                Some("ACPI 热区尚未验证为 CPU 保护温度，手动风扇目标暂不可用".to_owned());
             return;
         }
         match FanTarget::percent(percent) {

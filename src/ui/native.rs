@@ -638,7 +638,7 @@ impl NativeWindow {
             ui.update_font()?;
             let mut pixels = crate::platform::windows::desktop::icon_rgba();
             let mut mask = [0u8; 128];
-            for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+            for (i, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
                 pixel.swap(0, 2);
                 if pixel[3] == 0 {
                     mask[i / 8] |= 1 << (7 - i % 8);
@@ -883,7 +883,7 @@ impl NativeWindow {
         let size = 128usize;
         let mut pixels = crate::platform::windows::desktop::icon_rgba_size(size);
         let mut mask = vec![0u8; size * size / 8];
-        for (i, pixel) in pixels.chunks_exact_mut(4).enumerate() {
+        for (i, pixel) in pixels.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             pixel.swap(0, 2);
             if pixel[3] == 0 {
                 mask[i / 8] |= 1 << (7 - i % 8);

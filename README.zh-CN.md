@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/releases"><img src="https://img.shields.io/github/v/release/BlackSquarre/lecoo-rust-powercontrol?display_name=tag" alt="最新版本"></a>
   <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/release.yml/badge.svg" alt="Windows 发布构建"></a>
+  <a href="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/ci.yml"><img src="https://github.com/BlackSquarre/lecoo-rust-powercontrol/actions/workflows/ci.yml/badge.svg" alt="Windows CI"></a>
   <img src="https://img.shields.io/badge/Rust-2021-orange?logo=rust" alt="Rust 2021">
   <img src="https://img.shields.io/badge/platform-Windows%20x64-blue" alt="Windows x64">
 </p>
@@ -51,6 +52,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 
 打包还需要 Inno Setup 6。脚本在 `dist/` 生成 ZIP 与安装包；GitHub Actions 对每个版本标签生成两种格式，并检查安装及卸载。原生 C 运行库已静态链接。
 
+每次分支提交和 Pull Request 都会运行 Windows CI，检查格式、Clippy、库与二进制单元测试以及发布构建；也可在 Actions 页面手动触发。覆盖范围和本地命令见[测试文档](docs/testing.md)。
+
 ## 自动硬件测试
 
 在兼容的 Windows 设备上运行：
@@ -73,7 +76,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-power-modes.p
 src/       Rust 应用、界面、硬件抽象和测试工具
 scripts/   Windows 构建与自动硬件测试脚本
 docs/      环境准备、测试和硬件接口文档
-.github/   Windows 发布工作流
+.github/   Windows CI 与发布工作流
 ```
 
 ## 许可证

@@ -1,11 +1,12 @@
 use crate::core::types::SystemSnapshot;
 use crate::platform::HardwareControl;
-use std::sync::{Arc, Mutex};
+use std::rc::Rc;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use sysinfo::{Disks, System};
 
 pub struct SystemMonitor {
-    hw_control: Arc<Mutex<Box<dyn HardwareControl>>>,
+    hw_control: Rc<Mutex<Box<dyn HardwareControl>>>,
     sys_info: System,
     disks: Disks,
     last_update: Instant,
@@ -16,7 +17,8 @@ pub struct SystemMonitor {
 impl SystemMonitor {
     pub fn new(hw_control: Box<dyn HardwareControl>) -> Self {
         Self {
-            hw_control: Arc::new(Mutex::new(hw_control)),
+            // The WMI interface is shared only within the UI's COM apartment.
+            hw_control: Rc::new(Mutex::new(hw_control)),
             // Only memory is consumed here; avoid retaining an unused process/CPU inventory.
             sys_info: System::new(),
             disks: Disks::new_with_refreshed_list(),
@@ -97,7 +99,7 @@ impl SystemMonitor {
         snapshot
     }
 
-    pub fn get_hw_control(&self) -> Arc<Mutex<Box<dyn HardwareControl>>> {
+    pub fn get_hw_control(&self) -> Rc<Mutex<Box<dyn HardwareControl>>> {
         self.hw_control.clone()
     }
 
