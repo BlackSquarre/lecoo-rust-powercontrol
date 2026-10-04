@@ -11,27 +11,54 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: windows-release-${{ inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
 
 jobs:
-  build-and-release:
+  test:
+    name: Release unit tests
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: Check out tagged source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
       - name: Install stable Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-rust-x64
+
       - name: Check unit tests
         run: cargo test --all-targets --locked
 
-      - name: Build release binaries
-        run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test
+  build:
+    name: Build and verify release assets
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.release_version.outputs.version }}
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
 
-      - name: Package ZIP and installer
+      - name: Validate release version
+        id: release_version
         shell: pwsh
         env:
           RELEASE_TAG: ${{ inputs.ref || github.ref_name }}
@@ -41,13 +68,30 @@ jobs:
           if ($version -notmatch '^v(\d+\.\d+\.\d+)$') { throw "Expected a version tag: $version" }
           $cargoVersion = (Select-String -LiteralPath Cargo.toml -Pattern '^version = "([0-9.]+)"').Matches.Groups[1].Value
           if ($version -ne "v$cargoVersion") { throw 'Tag and Cargo version differ' }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-rust-x64
+
+      - name: Build release binaries
+        run: cargo build --release --locked --bin lecoo-control-center --bin hardware_test
+
+      - name: Package ZIP and installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (!(Test-Path -LiteralPath $compiler)) {
             choco install innosetup --yes --no-progress
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
           }
           ./scripts/build-release.ps1 -SkipBuild
-          "PACKAGE_VERSION=$version" >> $env:GITHUB_ENV
 
       - name: Check installer installation and removal
         shell: pwsh
@@ -65,19 +109,65 @@ jobs:
           $process = Start-Process -FilePath (Join-Path $installDir 'unins000.exe') -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0 -or (Test-Path (Join-Path $installDir 'lecoo-control-center.exe'))) { throw 'Installer removal failed' }
 
+      - name: Stage release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: |
+            dist/lecoo-rust-powercontrol-${{ steps.release_version.outputs.version }}-windows-x64.zip
+            dist/lecoo-rust-powercontrol-${{ steps.release_version.outputs.version }}-windows-x64.zip.sha256
+            dist/lecoo-rust-powercontrol-${{ steps.release_version.outputs.version }}-windows-x64-setup.exe
+            dist/lecoo-rust-powercontrol-${{ steps.release_version.outputs.version }}-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub release
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.version }}
+          persist-credentials: false
+
+      - name: Download verified release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+          path: dist
+
       - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $base = "dist/lecoo-rust-powercontrol-$env:PACKAGE_VERSION-windows-x64"
-          $assets = @("$base.zip", "$base.zip.sha256", "$base-setup.exe", "$base-setup.exe.sha256")
-          foreach ($asset in $assets) { if (!(Test-Path -LiteralPath $asset)) { throw "Missing release asset: $asset" } }
-          gh release view "$env:PACKAGE_VERSION" *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload "$env:PACKAGE_VERSION" @assets --clobber
-          } else {
-            gh release create "$env:PACKAGE_VERSION" @assets --verify-tag --title "Lecoo Rust PowerControl $env:PACKAGE_VERSION" --notes-file "docs/releases/$env:PACKAGE_VERSION.md"
-          }
-          if ($LASTEXITCODE -ne 0) { throw 'GitHub release publication failed' }
+          set -euo pipefail
+          base="lecoo-rust-powercontrol-${PACKAGE_VERSION}-windows-x64"
+          assets=(
+            "dist/${base}.zip"
+            "dist/${base}.zip.sha256"
+            "dist/${base}-setup.exe"
+            "dist/${base}-setup.exe.sha256"
+          )
+          for asset in "${assets[@]}"; do
+            if [[ ! -f "$asset" ]]; then
+              echo "Missing release asset: $asset" >&2
+              exit 1
+            fi
+          done
+
+          if gh release view "$PACKAGE_VERSION" >/dev/null 2>&1; then
+            gh release upload "$PACKAGE_VERSION" "${assets[@]}" --clobber
+          else
+            gh release create "$PACKAGE_VERSION" "${assets[@]}" \
+              --verify-tag \
+              --title "Lecoo Rust PowerControl $PACKAGE_VERSION" \
+              --notes-file "docs/releases/${PACKAGE_VERSION}.md"
+          fi
